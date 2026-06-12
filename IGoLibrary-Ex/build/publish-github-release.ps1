@@ -19,8 +19,16 @@ foreach ($path in @($installerPath, $manifestPath, $zipPath)) {
 }
 
 $tag = "v$Version"
-$existingRelease = gh release view $tag --repo $Repo --json tagName --jq ".tagName" 2>$null
-if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($existingRelease)) {
+$previousErrorActionPreference = $ErrorActionPreference
+try {
+    $ErrorActionPreference = "Continue"
+    $existingRelease = gh release view $tag --repo $Repo --json tagName --jq ".tagName" 2>$null
+    $releaseViewExitCode = $LASTEXITCODE
+} finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+}
+
+if ($releaseViewExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($existingRelease)) {
     gh release upload $tag $installerPath $manifestPath $zipPath --repo $Repo --clobber
     if ($LASTEXITCODE -ne 0) {
         throw "GitHub release asset upload failed."
