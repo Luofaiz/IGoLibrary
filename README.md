@@ -149,7 +149,7 @@ cd .\IGoLibrary-Ex
 
 ## 致谢
 
-感谢原项目 [EJianZQ/IGoLibrary](https://github.com/EJianZQ/IGoLibrary) 提供的基础思路、历史实现和项目参考。
+感谢原项目 [EJianZQ/IGoLibrary](https://github.com/EJianZQ/IGoLibrary) 提供的项目基础。
 
 ## 许可证
 
