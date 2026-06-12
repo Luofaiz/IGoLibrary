@@ -33,7 +33,9 @@ if (-not [string]::IsNullOrWhiteSpace($outputDirectory)) {
     New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 }
 
-$manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+$json = $manifest | ConvertTo-Json -Depth 4
+$utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[System.IO.File]::WriteAllText($OutputPath, $json + [Environment]::NewLine, $utf8NoBom)
 
 Write-Host "Created update manifest at $OutputPath"
 Write-Host "Installer SHA256: $sha256"
