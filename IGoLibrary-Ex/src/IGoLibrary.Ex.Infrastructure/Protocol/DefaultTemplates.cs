@@ -2,7 +2,7 @@ using IGoLibrary.Ex.Domain.Models;
 
 namespace IGoLibrary.Ex.Infrastructure.Protocol;
 
-internal static class DefaultTemplates
+public static class DefaultTemplates
 {
     public static ProtocolTemplateSet Instance { get; } = new(
         GetCookieUrlTemplate: "http://wechat.v2.traceint.com/index.php/urlNew/auth.html?r=https%3A%2F%2Fweb.traceint.com%2Fweb%2Findex.html&code=ReplaceMeByCode&state=1",

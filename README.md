@@ -44,6 +44,27 @@ IGoLibrary-Windows-x64.zip
 
 安装后的主程序名为 `IGoLibrary.exe`。当前公开 Release 主要面向 Windows；仓库内保留了 macOS 打包脚本，但未签名、未公证的 macOS 包首次运行时可能需要手动解除系统隔离。
 
+### Android APK
+
+仓库包含一个 Android 原生客户端，可直接生成本地安装用 APK。当前移动端支持打开微信授权入口、展示微信扫码二维码、从剪贴板自动解析授权链接、验证登录、加载场馆、刷新今日/明日座位、输入目标座位后启动今日抢座和明日预约、一键随机空座持续抢座、停止任务、查询当前预约、取消今日/明日预约，以及基于当前预约启动占座守护。手动 Cookie 仍保留为备用方式，不再作为主登录入口。
+
+APK 生成位置：
+
+```text
+IGoLibrary-Ex/artifacts/android/IGoLibrary-Android.apk
+```
+
+Android 手机安装时需要开启“允许安装未知来源应用”。当前 APK 用于本地测试和侧载安装，暂未接入应用商店发布和正式签名证书。移动端已复用桌面端的抢座、明日预约和占座协调器，但 Android 系统可能限制长时间后台运行；执行任务时建议保持 App 在前台并避免系统省电策略杀掉进程。
+
+移动端微信登录说明：当前项目没有接入微信开放平台 App SDK，因此不能像官方 App 那样完成原生一键微信回跳登录。APK 会尝试打开微信网页授权入口；如果手机系统或微信限制外部唤起，可在 App 内查看二维码，使用微信扫码或识别二维码获取授权链接。授权后复制包含 `code=` 的链接并回到 App，App 会自动从剪贴板解析并登录。
+
+如果手机已开启 USB 调试并连接到电脑，也可以直接安装：
+
+```powershell
+cd .\IGoLibrary-Ex
+.\build\install-android.ps1
+```
+
 ## 程序更新
 
 桌面端默认读取这个更新清单：
@@ -89,6 +110,7 @@ IGoLibrary-Ex/
     IGoLibrary.Ex.Application/
     IGoLibrary.Ex.Infrastructure/
     IGoLibrary.Ex.Desktop/
+    IGoLibrary.Ex.Android/
   tests/
     IGoLibrary.Ex.Tests/
   build/
@@ -120,6 +142,13 @@ dotnet test .\IGoLibrary-Ex.sln -c Release -p:UsedAvaloniaProducts=
 ```powershell
 cd .\IGoLibrary-Ex
 .\build\publish-installer.ps1 -Version "1.0.0" -Notes "Initial release."
+```
+
+构建 Android APK：
+
+```powershell
+cd .\IGoLibrary-Ex
+.\build\publish-android.ps1
 ```
 
 上传或覆盖 GitHub Release 资产：

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using IGoLibrary.Ex.Application.Abstractions;
+using IGoLibrary.Ex.Application.Exceptions;
 using IGoLibrary.Ex.Application.Services;
 using IGoLibrary.Ex.Application.State;
 using IGoLibrary.Ex.Domain.Enums;
@@ -65,6 +66,80 @@ public sealed class OccupySeatCoordinatorTests
         Assert.Equal(2, reserveAttempts);
         Assert.Contains(activityLogService.Entries, entry => entry.Category == "Occupy" && entry.Message.Contains("重新预约尝试成功"));
         Assert.Contains(notificationService.Successes, x => x.Title == "占座成功");
+        Assert.NotEqual(CoordinatorTaskState.Failed, coordinator.GetStatus().State);
+    }
+
+    [Fact]
+    public async Task StartAsync_ReservesFallbackSeat_WhenOriginalSeatIsBookedAfterCancellation()
+    {
+        var fallbackReserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reserveSeatKeys = new List<string>();
+        var reservation = new ReservationInfo(
+            "token",
+            1,
+            "自科阅览区一",
+            "seat-1",
+            "1号座",
+            DateTimeOffset.Now.AddSeconds(15));
+
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnGetReservationInfoAsync = (_, _) => Task.FromResult<ReservationInfo?>(reservation),
+            OnCancelReservationAsync = (_, _, _) => Task.FromResult(true),
+            OnGetLibraryLayoutAsync = (_, libraryId, _) => Task.FromResult(new LibraryLayout(
+                libraryId,
+                "自科阅览区一",
+                "3",
+                true,
+                2,
+                1,
+                0,
+                [
+                    new SeatSnapshot("seat-1", "1号座", true, 0, 0),
+                    new SeatSnapshot("seat-2", "2号座", false, 1, 0)
+                ])),
+            OnReserveSeatAsync = (_, _, seatKey, _) =>
+            {
+                reserveSeatKeys.Add(seatKey);
+                if (seatKey == "seat-1")
+                {
+                    throw new TraceIntApiException("该座位已经被人预定了!", 1, "该座位已经被人预定了!");
+                }
+
+                if (seatKey == "seat-2")
+                {
+                    fallbackReserved.TrySetResult();
+                    return Task.FromResult(true);
+                }
+
+                return Task.FromResult(false);
+            }
+        };
+
+        var notificationService = new FakeNotificationService();
+        var activityLogService = new ActivityLogService();
+        var runtimeState = new AppRuntimeState
+        {
+            Session = new SessionCredentials("cookie", SessionSource.ManualCookie, DateTimeOffset.Now, true)
+        };
+        var coordinator = new OccupySeatCoordinator(
+            apiClient,
+            new FakeSettingsService(AppSettings.Default with { RetryCount = 2 }),
+            notificationService,
+            new FakeTaskAlertService(),
+            activityLogService,
+            runtimeState);
+
+        using var cts = new CancellationTokenSource();
+        await coordinator.StartAsync(new OccupySeatPlan(TimeSpan.FromSeconds(60), RefreshMode.FixedTenSeconds), cts.Token);
+
+        await fallbackReserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cts.Cancel();
+        await coordinator.StopAsync();
+
+        Assert.Equal(["seat-1", "seat-1", "seat-1", "seat-2"], reserveSeatKeys);
+        Assert.Contains(activityLogService.Entries, entry => entry.Category == "Occupy" && entry.Message.Contains("已改为预约 2号座"));
+        Assert.Contains(notificationService.Successes, success => success.Message.Contains("2号座"));
         Assert.NotEqual(CoordinatorTaskState.Failed, coordinator.GetStatus().State);
     }
 

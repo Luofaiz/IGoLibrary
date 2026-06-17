@@ -1,4 +1,5 @@
 using IGoLibrary.Ex.Application.Abstractions;
+using IGoLibrary.Ex.Application.Exceptions;
 using IGoLibrary.Ex.Application.State;
 using IGoLibrary.Ex.Domain.Enums;
 using IGoLibrary.Ex.Domain.Helpers;
@@ -14,7 +15,8 @@ public sealed class OccupySeatCoordinator(
     IActivityLogService activityLogService,
     AppRuntimeState runtimeState) : IOccupySeatCoordinator
 {
-    private static readonly TimeSpan ReleaseAfterCancellationDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan ReleaseAfterCancellationDelay = TimeSpan.Zero;
+    private static readonly TimeSpan ReReserveRetryDelay = TimeSpan.FromMilliseconds(250);
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
     private Task? _runningTask;
@@ -141,14 +143,14 @@ public sealed class OccupySeatCoordinator(
                 }
 
                 await Task.Delay(ReleaseAfterCancellationDelay, cancellationToken);
-                var reserved = await TryReserveAgainAsync(cookie, info, cancellationToken);
-                if (!reserved)
+                var reservedSeat = await TryReserveAgainAsync(GetCurrentCookieOrThrow(), info, random, cancellationToken);
+                if (reservedSeat is null)
                 {
                     throw new InvalidOperationException("重新预约失败，已达到重试上限。");
                 }
 
-                activityLogService.Write(LogEntryKind.Success, "Occupy", $"{info.SeatName} 已重新预约成功。");
-                await notificationService.ShowSuccessAsync("占座成功", $"{info.SeatName} 已重新预约。", cancellationToken);
+                activityLogService.Write(LogEntryKind.Success, "Occupy", $"{reservedSeat.SeatName} 已重新预约成功。");
+                await notificationService.ShowSuccessAsync("占座成功", $"{reservedSeat.SeatName} 已重新预约。", cancellationToken);
                 await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
             }
         }
@@ -236,22 +238,40 @@ public sealed class OccupySeatCoordinator(
         return cookie;
     }
 
-    private async Task<bool> TryReserveAgainAsync(string cookie, ReservationInfo info, CancellationToken cancellationToken)
+    private async Task<TrackedSeat?> TryReserveAgainAsync(
+        string cookie,
+        ReservationInfo info,
+        Random random,
+        CancellationToken cancellationToken)
     {
         var settings = await settingsService.LoadAsync(cancellationToken);
         var maxAttempts = Math.Max(1, settings.RetryCount + 1);
+        var shouldTryFallbackSeats = false;
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            var reserved = await apiClient.ReserveSeatAsync(cookie, info.LibraryId, info.SeatKey, cancellationToken);
-            if (reserved)
+            try
             {
-                if (attempt > 1)
+                var reserved = await apiClient.ReserveSeatAsync(cookie, info.LibraryId, info.SeatKey, cancellationToken);
+                if (reserved)
                 {
-                    activityLogService.Write(LogEntryKind.Success, "Occupy", $"第 {attempt} 次重新预约尝试成功。");
+                    if (attempt > 1)
+                    {
+                        activityLogService.Write(LogEntryKind.Success, "Occupy", $"第 {attempt} 次重新预约尝试成功。");
+                    }
+
+                    return new TrackedSeat(info.SeatKey, info.SeatName);
                 }
 
-                return true;
+                shouldTryFallbackSeats = true;
+            }
+            catch (Exception ex) when (TryGetExpectedReserveMiss(ex, out var missKind))
+            {
+                activityLogService.Write(LogEntryKind.Info, "Occupy", GetReserveMissMessage(missKind, info.SeatName));
+                if (missKind == OccupyReserveMissKind.Unavailable)
+                {
+                    shouldTryFallbackSeats = true;
+                }
             }
 
             if (attempt >= maxAttempts)
@@ -259,10 +279,164 @@ public sealed class OccupySeatCoordinator(
                 break;
             }
 
-            activityLogService.Write(LogEntryKind.Warning, "Occupy", $"第 {attempt} 次重新预约失败，1 秒后继续重试。");
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+            activityLogService.Write(LogEntryKind.Warning, "Occupy", $"第 {attempt} 次重新预约失败，{ReReserveRetryDelay.TotalSeconds:0} 秒后继续重试。");
+            await Task.Delay(ReReserveRetryDelay, cancellationToken);
+            cookie = GetCurrentCookieOrThrow();
+        }
+
+        return shouldTryFallbackSeats
+            ? await TryReserveFallbackSeatAsync(cookie, info, random, cancellationToken)
+            : null;
+    }
+
+    private async Task<TrackedSeat?> TryReserveFallbackSeatAsync(
+        string cookie,
+        ReservationInfo originalInfo,
+        Random random,
+        CancellationToken cancellationToken)
+    {
+        SetRunning("原座位暂不可用，正在尝试同场馆其他空座。");
+        var fallbackSeats = await SelectFallbackSeatsAsync(cookie, originalInfo, random, cancellationToken);
+        if (fallbackSeats.Count == 0)
+        {
+            activityLogService.Write(LogEntryKind.Warning, "Occupy", "原座位未能重新预约，当前场馆没有可兜底尝试的空座。");
+            return null;
+        }
+
+        foreach (var seat in fallbackSeats)
+        {
+            cookie = GetCurrentCookieOrThrow();
+            try
+            {
+                var reserved = await apiClient.ReserveSeatAsync(cookie, originalInfo.LibraryId, seat.SeatKey, cancellationToken);
+                if (reserved)
+                {
+                    activityLogService.Write(LogEntryKind.Success, "Occupy", $"原座位已被占用，已改为预约 {seat.SeatName}。");
+                    return seat;
+                }
+
+                activityLogService.Write(LogEntryKind.Info, "Occupy", $"{seat.SeatName} 兜底预约未被接受，继续尝试其他空座。");
+            }
+            catch (Exception ex) when (TryGetExpectedReserveMiss(ex, out var missKind))
+            {
+                activityLogService.Write(LogEntryKind.Info, "Occupy", GetReserveMissMessage(missKind, seat.SeatName));
+                if (missKind == OccupyReserveMissKind.RetryRequested)
+                {
+                    await Task.Delay(ReReserveRetryDelay, cancellationToken);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<List<TrackedSeat>> SelectFallbackSeatsAsync(
+        string cookie,
+        ReservationInfo originalInfo,
+        Random random,
+        CancellationToken cancellationToken)
+    {
+        LibraryLayout layout;
+        try
+        {
+            layout = await apiClient.GetLibraryLayoutAsync(cookie, originalInfo.LibraryId, cancellationToken);
+            runtimeState.CurrentLayout = layout;
+        }
+        catch (Exception ex) when (!CookieExpiryDetector.IsKnownExpiredCookieException(ex, runtimeState.Session?.Cookie))
+        {
+            activityLogService.Write(LogEntryKind.Warning, "Occupy", $"读取座位图失败，尝试使用本地缓存兜底：{ex.Message}");
+            if (runtimeState.CurrentLayout?.LibraryId != originalInfo.LibraryId)
+            {
+                return [];
+            }
+
+            layout = runtimeState.CurrentLayout;
+        }
+
+        var candidates = layout.Seats
+            .Where(seat => seat.IsAvailable)
+            .Where(seat => !string.IsNullOrWhiteSpace(seat.SeatKey))
+            .Where(seat => !string.Equals(seat.SeatKey, originalInfo.SeatKey, StringComparison.Ordinal))
+            .Select(seat => new TrackedSeat(
+                seat.SeatKey,
+                string.IsNullOrWhiteSpace(seat.SeatName) ? seat.SeatKey : seat.SeatName))
+            .GroupBy(seat => seat.SeatKey, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToList();
+
+        Shuffle(candidates, random);
+        return candidates;
+    }
+
+    private static void Shuffle<T>(IList<T> items, Random random)
+    {
+        for (var index = items.Count - 1; index > 0; index--)
+        {
+            var swapIndex = random.Next(index + 1);
+            (items[index], items[swapIndex]) = (items[swapIndex], items[index]);
+        }
+    }
+
+    private static bool TryGetExpectedReserveMiss(Exception exception, out OccupyReserveMissKind missKind)
+    {
+        missKind = OccupyReserveMissKind.None;
+        string message;
+        if (exception is TraceIntApiException traceIntApiException)
+        {
+            message = traceIntApiException.RemoteMessage;
+        }
+        else if (exception is InvalidOperationException)
+        {
+            message = exception.Message;
+        }
+        else
+        {
+            return false;
+        }
+
+        if (ContainsAny(message, "请重新尝试", "重新尝试", "重试", "服务器繁忙", "繁忙", "频繁", "too many", "try again", "busy"))
+        {
+            missKind = OccupyReserveMissKind.RetryRequested;
+            return true;
+        }
+
+        if (ContainsAny(message, "场馆满", "已满", "满员", "无空位", "没有空位", "暂无空位", "余座不足", "无可用座位", "无座", "full"))
+        {
+            missKind = OccupyReserveMissKind.Unavailable;
+            return true;
+        }
+
+        if (ContainsAny(message, "座位", "座席", "座号", "seat") &&
+            ContainsAny(message, "已被", "已经被", "被预约", "被预定", "被人预约", "被人预定", "已预约", "已预定", "占用", "不可预约", "不存在", "无效", "not available", "occupied"))
+        {
+            missKind = OccupyReserveMissKind.Unavailable;
+            return true;
         }
 
         return false;
+    }
+
+    private static string GetReserveMissMessage(OccupyReserveMissKind missKind, string seatName)
+    {
+        return missKind switch
+        {
+            OccupyReserveMissKind.RetryRequested =>
+                $"{seatName} 重新预约返回服务器繁忙或需要重试，稍后继续尝试。",
+            OccupyReserveMissKind.Unavailable =>
+                $"{seatName} 暂不可预约，将短暂重试原座；若仍不可用会尝试同场馆其他空座。",
+            _ => $"{seatName} 重新预约未命中。"
+        };
+    }
+
+    private static bool ContainsAny(string text, params string[] candidates)
+    {
+        return candidates.Any(candidate => text.Contains(candidate, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private enum OccupyReserveMissKind
+    {
+        None = 0,
+        Unavailable = 1,
+        RetryRequested = 2
     }
 }
