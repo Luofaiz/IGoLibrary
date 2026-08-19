@@ -183,7 +183,7 @@
   <TrayIcon.Icons>
     <TrayIcons>
       <TrayIcon Icon="/Assets/main.ico"
-                ToolTipText="IGoLibrary-Ex"
+                ToolTipText="IGoLibrary"
                 Command="{Binding ShowWindowCommand}">
         <TrayIcon.Menu>
           <NativeMenu>

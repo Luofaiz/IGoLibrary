@@ -105,6 +105,30 @@ public sealed class TraceIntApiClient(
         return results;
     }
 
+    public async Task<string?> GetCurrentUserNicknameAsync(string cookie, CancellationToken cancellationToken = default)
+    {
+        var templates = await protocolTemplateStore.GetEffectiveTemplatesAsync(cancellationToken);
+        using var response = await SendGraphQlAsync(cookie, templates.QueryReservationInfoTemplate, cancellationToken);
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var document = JsonDocument.Parse(raw);
+
+        ThrowIfGraphQlError(document.RootElement);
+        var currentUser = document.RootElement
+            .GetProperty("data")
+            .GetProperty("userAuth")
+            .GetProperty("currentUser");
+
+        if (currentUser.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined ||
+            !currentUser.TryGetProperty("user_nick", out var nicknameElement) ||
+            nicknameElement.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var nickname = nicknameElement.GetString()?.Trim();
+        return string.IsNullOrWhiteSpace(nickname) ? null : nickname;
+    }
+
     public async Task<LibraryLayout> GetLibraryLayoutAsync(string cookie, int libraryId, CancellationToken cancellationToken = default)
     {
         var templates = await protocolTemplateStore.GetEffectiveTemplatesAsync(cancellationToken);

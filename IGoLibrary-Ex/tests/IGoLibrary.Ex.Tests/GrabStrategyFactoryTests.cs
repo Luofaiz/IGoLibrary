@@ -8,7 +8,7 @@ public sealed class GrabStrategyFactoryTests
     [Theory]
     [InlineData(GrabMode.Aggressive, 1, 1)]
     [InlineData(GrabMode.Randomized, 4, 8)]
-    [InlineData(GrabMode.Relaxed, 5, 5)]
+    [InlineData(GrabMode.Relaxed, 3, 3)]
     public void FromMode_ReturnsExpectedDelayWindow(GrabMode mode, int minDelaySeconds, int maxDelaySeconds)
     {
         var strategy = GrabStrategyFactory.FromMode(mode);

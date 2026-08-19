@@ -15,7 +15,8 @@ public sealed record AppSettings(
     string? LastLibraryName,
     CookieExpiryAlertSettings? CookieExpiryAlerts = null,
     int SuccessfulReservationCount = 0,
-    long TotalGuardSeconds = 0)
+    long TotalGuardSeconds = 0,
+    string? CachedUserNickname = null)
 {
     public static AppSettings Default { get; } = new(
         NotificationsEnabled: true,
@@ -30,5 +31,6 @@ public sealed record AppSettings(
         LastLibraryName: null,
         CookieExpiryAlerts: CookieExpiryAlertSettings.Default,
         SuccessfulReservationCount: 0,
-        TotalGuardSeconds: 0);
+        TotalGuardSeconds: 0,
+        CachedUserNickname: null);
 }

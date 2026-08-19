@@ -10,6 +10,18 @@ namespace IGoLibrary.Ex.Tests;
 public sealed class MainWindowClipboardTests
 {
     [Fact]
+    public void DesktopWeChatAuthorizationUrl_UsesWeChatOAuthAndTraceIntCallback()
+    {
+        var uri = new Uri(MainWindow.DesktopWeChatAuthorizationUrl);
+
+        Assert.Equal("https", uri.Scheme);
+        Assert.Equal("open.weixin.qq.com", uri.Host);
+        Assert.Contains("appid=wx2996d437cd442527", uri.Query);
+        Assert.Contains("wechat.v2.traceint.com", Uri.UnescapeDataString(uri.Query));
+        Assert.Contains("scope=snsapi_userinfo", uri.Query);
+    }
+
+    [Fact]
     public void CanTryAutoParseClipboard_ReturnsFalse_WhenActivePageIsNotAccountAndVenue()
     {
         var viewModel = CreateViewModel();

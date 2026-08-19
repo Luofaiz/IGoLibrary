@@ -151,6 +151,82 @@ public sealed class TomorrowReservationCoordinatorTests
     }
 
     [Fact]
+    public async Task StartAsync_RandomAvailableSeatMode_SubmitsAvailableTomorrowSeatWithoutTargets()
+    {
+        var submittedSeatKeys = new List<string>();
+        var randomSeatSubmitted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stopQueue = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnGetPrereserveLibraryLayoutAsync = (_, _, _) => Task.FromResult(new LibraryLayout(
+                117580,
+                "自科阅览区",
+                "3",
+                true,
+                3,
+                1,
+                0,
+                [
+                    new SeatSnapshot("occupied", "225", true, 0, 0),
+                    new SeatSnapshot("free-a", "226", false, 1, 0),
+                    new SeatSnapshot("free-b", "227", false, 2, 0)
+                ])),
+            OnSavePrereserveSeatAsync = (cookie, libraryId, seatKey, _) =>
+            {
+                submittedSeatKeys.Add(seatKey);
+                randomSeatSubmitted.TrySetResult();
+                return Task.FromResult(new PrereserveSaveResult(true, cookie));
+            }
+        };
+        var queueClient = new FakePrereserveQueueClient
+        {
+            OnRunAsync = async (onMessageAsync, cancellationToken) =>
+            {
+                await onMessageAsync(new PrereserveQueueMessage(
+                    "prereserve/queue",
+                    "排队成功！请在2分钟内选择座位，否则需要重新排队。",
+                    0,
+                    0,
+                    string.Empty), cancellationToken);
+                await stopQueue.Task.WaitAsync(cancellationToken);
+            }
+        };
+        var runtimeState = new AppRuntimeState
+        {
+            Session = new SessionCredentials("Authorization=a; SERVERID=b", SessionSource.ManualCookie, DateTimeOffset.Now, true)
+        };
+        var coordinator = new TomorrowReservationCoordinator(
+            apiClient,
+            queueClient,
+            new FakeTaskAlertService(),
+            new ActivityLogService(),
+            runtimeState);
+        var plan = new TomorrowReservationPlan(
+            117580,
+            "自科阅览区",
+            [],
+            GrabMode.Aggressive,
+            new GrabSeatPollingStrategy(
+                TimeSpan.FromMilliseconds(10),
+                TimeSpan.FromMilliseconds(10),
+                50,
+                TimeSpan.FromMilliseconds(10),
+                TimeSpan.FromMilliseconds(10)),
+            null,
+            UseRandomAvailableSeat: true);
+
+        await coordinator.StartAsync(plan);
+        await randomSeatSubmitted.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await coordinator.StopAsync();
+        stopQueue.TrySetResult();
+
+        var submittedSeatKey = Assert.Single(submittedSeatKeys);
+        Assert.Contains(submittedSeatKey, new[] { "free-a", "free-b" });
+        Assert.DoesNotContain("occupied", submittedSeatKeys);
+    }
+
+    [Fact]
     public async Task StartAsync_SubmitsAllRandomFallbackCandidates_InSameCycleUntilOneSucceeds()
     {
         var submittedSeatKeys = new List<string>();

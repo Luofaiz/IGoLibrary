@@ -268,7 +268,7 @@ public sealed class MainActivity : Activity
 
         content.AddView(CreateText("预约模式", 13, TypefaceStyle.Bold), MatchWrap(top: 12));
         _grabModeSpinner = new Spinner(this);
-        _grabModeSpinner.Adapter = CreateAdapter(["极限速度", "随机延迟", "延迟 5 秒"]);
+        _grabModeSpinner.Adapter = CreateAdapter(["极限速度", "随机延迟", "延迟 3 秒"]);
         _grabModeSpinner.SetSelection((int)GrabMode.Relaxed);
         content.AddView(_grabModeSpinner, MatchWrap(top: 6));
 

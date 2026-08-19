@@ -12,6 +12,42 @@ namespace IGoLibrary.Ex.Tests;
 public sealed class MainWindowViewModelTests
 {
     [Fact]
+    public async Task ValidateManualCookieAsync_CachesWechatNickname_AndKeepsItOnSignOut()
+    {
+        var settingsService = new FakeSettingsService(AppSettings.Default);
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnGetCurrentUserNicknameAsync = (_, _) => Task.FromResult<string?>("  星河  ")
+        };
+        var viewModel = CreateViewModel(apiClient: apiClient, settingsService: settingsService);
+        viewModel.ManualCookieText = "Authorization=a; SERVERID=b";
+
+        await viewModel.ValidateManualCookieCommand.ExecuteAsync(null);
+
+        Assert.EndsWith("，星河", viewModel.HomeGreetingTitleText, StringComparison.Ordinal);
+        Assert.Equal("星河", settingsService.CurrentSettings.CachedUserNickname);
+
+        await viewModel.SignOutCommand.ExecuteAsync(null);
+
+        Assert.EndsWith("，星河", viewModel.HomeGreetingTitleText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_UsesCachedWechatNickname_WhenLoggedOut()
+    {
+        var viewModel = CreateViewModel(
+            settingsService: new FakeSettingsService(AppSettings.Default with
+            {
+                CachedUserNickname = "之前的微信名"
+            }));
+
+        await viewModel.InitializeAsync();
+
+        Assert.False(viewModel.IsAuthorized);
+        Assert.EndsWith("，之前的微信名", viewModel.HomeGreetingTitleText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ValidateManualCookieAsync_DoesNotRestoreStoredVenueSelection_OnFreshAuthorization()
     {
         var settingsService = new FakeSettingsService(AppSettings.Default with
@@ -42,13 +78,14 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void SidebarItems_OnlyExposeHomeAndAccount_WhenUnauthorized()
+    public void SidebarItems_ExcludeGuideFromMainList_WhenUnauthorized()
     {
         var viewModel = CreateViewModel();
 
         var titles = viewModel.SidebarItems.Select(item => item.Title).ToArray();
 
         Assert.Equal(["首页", "账户与场馆"], titles);
+        Assert.Equal("使用指南", viewModel.BottomSidebarItems.Single().Title);
     }
 
     [Fact]
@@ -61,6 +98,31 @@ public sealed class MainWindowViewModelTests
         var titles = viewModel.SidebarItems.Select(item => item.Title).ToArray();
 
         Assert.Equal(["首页", "账户与场馆", "抢座", "占座", "通知设置", "系统设置"], titles);
+        Assert.Equal("使用指南", viewModel.BottomSidebarItems.Single().Title);
+    }
+
+    [Fact]
+    public void Guide_RemainsAccessible_WhenUnauthorized()
+    {
+        var viewModel = CreateViewModel();
+
+        viewModel.SelectedTabIndex = MainWindowViewModel.GuideTabIndex;
+
+        Assert.Equal(MainWindowViewModel.GuideTabIndex, viewModel.SelectedTabIndex);
+        Assert.Equal("使用指南", viewModel.SelectedSidebarItem?.Title);
+    }
+
+    [Fact]
+    public void SigningOut_WhileGuideIsOpen_KeepsGuideSelected()
+    {
+        var viewModel = CreateViewModel();
+        viewModel.IsAuthorized = true;
+        viewModel.SelectedTabIndex = MainWindowViewModel.GuideTabIndex;
+
+        viewModel.IsAuthorized = false;
+
+        Assert.Equal(MainWindowViewModel.GuideTabIndex, viewModel.SelectedTabIndex);
+        Assert.Equal("使用指南", viewModel.SelectedSidebarItem?.Title);
     }
 
     [Fact]
@@ -492,6 +554,33 @@ public sealed class MainWindowViewModelTests
 
         Assert.Equal(1, grabCoordinator.StartCalls);
         var plan = Assert.IsType<GrabSeatPlan>(grabCoordinator.StartedPlan);
+        Assert.True(plan.UseRandomAvailableSeat);
+        Assert.Empty(plan.Seats);
+        Assert.Equal(library.LibraryId, plan.LibraryId);
+        Assert.Equal(new TimeOnly(8, 15, 30), plan.ScheduledStart);
+    }
+
+    [Fact]
+    public async Task StartRandomAvailableSeatGrabAsync_StartsTomorrowCoordinatorWithoutSelectedSeats()
+    {
+        var library = new LibrarySummary(10, "library", "3", true, 120, 10, 0);
+        var grabCoordinator = new FakeGrabSeatCoordinator();
+        var tomorrowCoordinator = new FakeTomorrowReservationCoordinator();
+        var viewModel = CreateViewModel(
+            grabSeatCoordinator: grabCoordinator,
+            tomorrowReservationCoordinator: tomorrowCoordinator);
+
+        viewModel.IsAuthorized = true;
+        viewModel.SelectedLibrary = library;
+        viewModel.SelectedGrabTaskTargetIndex = 1;
+        viewModel.ScheduledTimeText = "08:15:30";
+
+        Assert.True(viewModel.CanStartRandomAvailableSeatGrab);
+        await viewModel.StartRandomAvailableSeatGrabCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, grabCoordinator.StartCalls);
+        Assert.Equal(1, tomorrowCoordinator.StartCalls);
+        var plan = Assert.IsType<TomorrowReservationPlan>(tomorrowCoordinator.StartedPlan);
         Assert.True(plan.UseRandomAvailableSeat);
         Assert.Empty(plan.Seats);
         Assert.Equal(library.LibraryId, plan.LibraryId);

@@ -56,6 +56,7 @@ public partial class MainWindowViewModel(
     private static readonly CultureInfo DashboardCulture = CultureInfo.GetCultureInfo("zh-CN");
     private const int NotificationSettingsTabIndex = 4;
     private const int SystemSettingsTabIndex = 5;
+    public const int GuideTabIndex = 6;
     private static readonly SidebarNavigationItem HomeSidebarItem = new(
         0,
         "首页",
@@ -80,6 +81,10 @@ public partial class MainWindowViewModel(
         SystemSettingsTabIndex,
         "系统设置",
         "M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.73,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.49-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z");
+    private static readonly SidebarNavigationItem GuideSidebarItem = new(
+        GuideTabIndex,
+        "使用指南",
+        "M4 3h13a3 3 0 0 1 3 3v15H7a3 3 0 0 1-3-3V3zm3 2H6v13a1 1 0 0 0 1 1h11V6a1 1 0 0 0-1-1H7zm2 3h6v2H9V8zm0 4h6v2H9v-2z");
     private static readonly SidebarNavigationItem[] UnauthorizedSidebarItems =
     [
         HomeSidebarItem,
@@ -129,6 +134,7 @@ public partial class MainWindowViewModel(
     private readonly object _processedAuthCodesGate = new();
     private readonly HashSet<string> _processedAuthCodes = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _inFlightAuthCodes = new(StringComparer.OrdinalIgnoreCase);
+    private string _homeUserDisplayName = GetSystemUserDisplayName();
 
     public ObservableCollection<LibrarySummary> AvailableLibraries { get; } = [];
 
@@ -138,13 +144,15 @@ public partial class MainWindowViewModel(
         AccountAndVenueSidebarItem
     ];
 
+    public IReadOnlyList<SidebarNavigationItem> BottomSidebarItems { get; } = [GuideSidebarItem];
+
     public ObservableCollection<SeatItemViewModel> VisibleSeats { get; } = [];
 
     public ObservableCollection<TrackedSeat> SelectedSeats { get; } = [];
 
     public ObservableCollection<LogLineViewModel> OccupyLogLines { get; } = [];
 
-    public string[] GrabModes { get; } = ["极限速度", "随机延迟", "延迟 5 秒"];
+    public string[] GrabModes { get; } = ["极限速度", "随机延迟", "延迟 3 秒"];
 
     public string[] RefreshModes { get; } = ["固定间隔 10 秒", "随机 10~20 秒"];
 
@@ -170,7 +178,7 @@ public partial class MainWindowViewModel(
 
     partial void OnSelectedTabIndexChanged(int value)
     {
-        if (!IsAuthorized && value > AccountAndVenueTabIndex)
+        if (!IsAuthorized && value > AccountAndVenueTabIndex && value != GuideTabIndex)
         {
             SelectedTabIndex = AccountAndVenueTabIndex;
             return;
@@ -582,7 +590,7 @@ public partial class MainWindowViewModel(
 
     public bool CanEditGrabConfiguration => !IsGrabTaskActive;
 
-    public bool CanStartRandomAvailableSeatGrab => CanEditGrabConfiguration && SelectedLibrary is not null && IsTodayGrabTarget;
+    public bool CanStartRandomAvailableSeatGrab => CanEditGrabConfiguration && SelectedLibrary is not null;
 
     public bool IsTodayGrabTarget => SelectedGrabTaskTargetIndex == 0;
 
@@ -758,7 +766,7 @@ public partial class MainWindowViewModel(
 
     partial void OnIsAuthorizedChanged(bool value)
     {
-        if (!value && SelectedTabIndex > AccountAndVenueTabIndex)
+        if (!value && SelectedTabIndex > AccountAndVenueTabIndex && SelectedTabIndex != GuideTabIndex)
         {
             SelectedTabIndex = AccountAndVenueTabIndex;
         }
@@ -858,6 +866,7 @@ public partial class MainWindowViewModel(
                     ManualCookieText = restored.Cookie;
                     UpdateSidebarCookieExpiry(restored.Cookie);
                     await NotifySessionRestoredAsync(restored.Cookie);
+                    await RefreshHomeUserDisplayNameAsync(restored.Cookie);
                     await LoadLibrariesAsync(restorePreferredSelection: true);
                     if (SelectedLibrary is not null)
                     {
@@ -1077,6 +1086,7 @@ public partial class MainWindowViewModel(
                 IsAuthorized = true;
                 SessionSummary = $"登录成功：{session.Source} / {session.SavedAt:yyyy-MM-dd HH:mm:ss}";
                 UpdateSidebarCookieExpiry(session.Cookie);
+                await RefreshHomeUserDisplayNameAsync(session.Cookie);
                 await LoadLibrariesAsync(restorePreferredSelection: false);
             }
             catch (Exception ex)
@@ -1117,6 +1127,7 @@ public partial class MainWindowViewModel(
             IsAuthorized = true;
             SessionSummary = $"登录成功：{session.Source} / {session.SavedAt:yyyy-MM-dd HH:mm:ss}";
             UpdateSidebarCookieExpiry(session.Cookie);
+            await RefreshHomeUserDisplayNameAsync(session.Cookie);
             await LoadLibrariesAsync(restorePreferredSelection: false);
             SelectedTabIndex = 1;
         }
@@ -1144,6 +1155,7 @@ public partial class MainWindowViewModel(
             ManualCookieText = session.Cookie;
             UpdateSidebarCookieExpiry(session.Cookie);
             await NotifySessionRestoredAsync(session.Cookie);
+            await RefreshHomeUserDisplayNameAsync(session.Cookie);
             await LoadLibrariesAsync(restorePreferredSelection: false);
         }
         catch (Exception ex)
@@ -1509,16 +1521,25 @@ public partial class MainWindowViewModel(
             return;
         }
 
-        if (!IsTodayGrabTarget)
-        {
-            await notificationService.ShowWarningAsync("仅支持今日抢座", "一键随机空座当前只支持今日抢座。");
-            return;
-        }
-
         try
         {
             var mode = (GrabMode)SelectedGrabModeIndex;
             var scheduledStart = ParseScheduledTime();
+            if (IsTomorrowReservationTarget)
+            {
+                var tomorrowPlan = new TomorrowReservationPlan(
+                    SelectedLibrary.LibraryId,
+                    SelectedLibrary.Name,
+                    [],
+                    mode,
+                    GrabStrategyFactory.FromMode(mode),
+                    scheduledStart,
+                    UseRandomAvailableSeat: true);
+
+                await tomorrowReservationCoordinator.StartAsync(tomorrowPlan);
+                return;
+            }
+
             var plan = new GrabSeatPlan(
                 SelectedLibrary.LibraryId,
                 SelectedLibrary.Name,
@@ -1972,6 +1993,10 @@ public partial class MainWindowViewModel(
 
             _historicalSuccessCount = Math.Max(0, settings.SuccessfulReservationCount);
             _totalGuardSeconds = Math.Max(0, settings.TotalGuardSeconds);
+            if (!string.IsNullOrWhiteSpace(settings.CachedUserNickname))
+            {
+                _homeUserDisplayName = settings.CachedUserNickname.Trim();
+            }
             HomeHistoricalSuccessCount = _historicalSuccessCount;
             UpdateHomeDashboardPresentation();
         }
@@ -3048,17 +3073,42 @@ public partial class MainWindowViewModel(
         return $"{Math.Max(0, (int)elapsed.TotalHours):D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}";
     }
 
-    private static string BuildGreetingTitleText(int hour)
+    private string BuildGreetingTitleText(int hour)
     {
         return hour switch
         {
-            < 5 => $"夜深了，{GetSystemUserDisplayName()}",
-            < 11 => $"早安，{GetSystemUserDisplayName()}",
-            < 14 => $"中午好，{GetSystemUserDisplayName()}",
-            < 18 => $"下午好，{GetSystemUserDisplayName()}",
-            < 23 => $"晚上好，{GetSystemUserDisplayName()}",
-            _ => $"夜深了，{GetSystemUserDisplayName()}"
+            < 5 => $"夜深了，{_homeUserDisplayName}",
+            < 11 => $"早安，{_homeUserDisplayName}",
+            < 14 => $"中午好，{_homeUserDisplayName}",
+            < 18 => $"下午好，{_homeUserDisplayName}",
+            < 23 => $"晚上好，{_homeUserDisplayName}",
+            _ => $"夜深了，{_homeUserDisplayName}"
         };
+    }
+
+    private async Task RefreshHomeUserDisplayNameAsync(string cookie)
+    {
+        try
+        {
+            var nickname = await apiClient.GetCurrentUserNicknameAsync(cookie);
+            if (string.IsNullOrWhiteSpace(nickname))
+            {
+                return;
+            }
+
+            _homeUserDisplayName = nickname.Trim();
+            UpdateHomeHeroPresentation(DateTimeOffset.Now);
+
+            var settings = await settingsService.LoadAsync();
+            if (!string.Equals(settings.CachedUserNickname, _homeUserDisplayName, StringComparison.Ordinal))
+            {
+                await settingsService.SaveAsync(settings with { CachedUserNickname = _homeUserDisplayName });
+            }
+        }
+        catch (Exception ex)
+        {
+            activityLogService.Write(LogEntryKind.Warning, "Auth", $"读取微信昵称失败，继续使用本地显示名称：{ex.Message}");
+        }
     }
 
     private static string BuildGreetingMessageText(int hour)
@@ -3337,6 +3387,7 @@ public partial class MainWindowViewModel(
     private void SyncSelectedSidebarItem()
     {
         var target = SidebarItems.FirstOrDefault(item => item.PageIndex == SelectedTabIndex)
+            ?? BottomSidebarItems.FirstOrDefault(item => item.PageIndex == SelectedTabIndex)
             ?? SidebarItems.FirstOrDefault();
 
         _isSynchronizingSidebarSelection = true;

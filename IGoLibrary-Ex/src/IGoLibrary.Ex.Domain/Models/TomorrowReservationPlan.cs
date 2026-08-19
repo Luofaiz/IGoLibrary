@@ -8,4 +8,5 @@ public sealed record TomorrowReservationPlan(
     IReadOnlyList<TrackedSeat> Seats,
     GrabMode Mode,
     GrabSeatPollingStrategy PollingStrategy,
-    TimeOnly? ScheduledStart);
+    TimeOnly? ScheduledStart,
+    bool UseRandomAvailableSeat = false);

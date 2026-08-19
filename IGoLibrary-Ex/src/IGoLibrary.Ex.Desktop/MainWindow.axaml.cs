@@ -1,5 +1,6 @@
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -16,6 +17,9 @@ namespace IGoLibrary.Ex.Desktop;
 
 public partial class MainWindow : Window
 {
+    internal const string DesktopWeChatAuthorizationUrl =
+        "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wx2996d437cd442527&redirect_uri=https%3A//wechat.v2.traceint.com/index.php/graphql%3FoperationName%3Dindex%26query%3Dquery%257BuserAuth%257BtongJi%257Brank%257D%257D%257D&response_type=code&scope=snsapi_userinfo&state=1&connect_redirect=1";
+
     private readonly AppWindowService _appWindowService;
     private readonly INotificationService _notificationService;
     private MainWindowViewModel? _observedViewModel;
@@ -65,6 +69,47 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel viewModel)
         {
             viewModel.OpenProjectPageCommand.Execute(null);
+        }
+    }
+
+    private void OnStartDesktopWeChatAuthorizationClick(object? sender, RoutedEventArgs e)
+    {
+        _ = RunUiEventHandlerAsync(
+            StartDesktopWeChatAuthorizationAsync,
+            _notificationService,
+            "启动电脑版微信授权失败");
+    }
+
+    private async Task StartDesktopWeChatAuthorizationAsync()
+    {
+        var clipboard = Clipboard ?? throw new InvalidOperationException("当前无法访问系统剪贴板。");
+        await clipboard.SetTextAsync(DesktopWeChatAuthorizationUrl);
+
+        if (!TryLaunchDesktopWeChat())
+        {
+            await _notificationService.ShowWarningAsync(
+                "授权入口已复制",
+                "未能自动启动电脑版微信。请手动打开微信，在文件传输助手中粘贴并打开链接；授权后复制页面地址，软件会自动登录。");
+            return;
+        }
+
+        await _notificationService.ShowInfoAsync(
+            "电脑版微信已启动",
+            "授权入口已复制。请在文件传输助手中粘贴并打开；授权后复制页面地址，软件会自动登录。");
+    }
+
+    internal static bool TryLaunchDesktopWeChat()
+    {
+        try
+        {
+            return Process.Start(new ProcessStartInfo("weixin://")
+            {
+                UseShellExecute = true
+            }) is not null;
+        }
+        catch
+        {
+            return false;
         }
     }
 

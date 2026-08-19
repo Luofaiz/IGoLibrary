@@ -22,8 +22,8 @@ public static class GrabStrategyFactory
                 TimeSpan.FromSeconds(5),
                 TimeSpan.FromSeconds(10)),
             _ => new GrabSeatPollingStrategy(
-                TimeSpan.FromSeconds(5),
-                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(3),
                 50,
                 TimeSpan.FromSeconds(5),
                 TimeSpan.FromSeconds(10))

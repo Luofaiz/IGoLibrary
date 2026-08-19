@@ -126,7 +126,7 @@ public sealed class TomorrowReservationCoordinator(
                 var selectedSeatAccepted = false;
                 var selectedSeatRetryRequested = false;
                 var queueRefreshRequested = false;
-                for (var offset = 0; offset < plan.Seats.Count; offset++)
+                for (var offset = 0; !plan.UseRandomAvailableSeat && offset < plan.Seats.Count; offset++)
                 {
                     var index = (seatStartIndex + offset) % plan.Seats.Count;
                     var seat = plan.Seats[index];
@@ -162,7 +162,7 @@ public sealed class TomorrowReservationCoordinator(
                     cookie = GetCurrentCookieOrThrow();
                     queueSession = await RestartQueueSessionAsync(queueSession, cookie, reservationSucceeded, cancellationToken);
                 }
-                else if (!selectedSeatAccepted && !selectedSeatRetryRequested)
+                else if (plan.UseRandomAvailableSeat || (!selectedSeatAccepted && !selectedSeatRetryRequested))
                 {
                     var fallbackOutcome = await TrySubmitRandomFallbackSeatsAsync(
                         cookie,
@@ -187,7 +187,10 @@ public sealed class TomorrowReservationCoordinator(
                     return;
                 }
 
-                seatStartIndex = (seatStartIndex + 1) % plan.Seats.Count;
+                if (plan.Seats.Count > 0)
+                {
+                    seatStartIndex = (seatStartIndex + 1) % plan.Seats.Count;
+                }
                 var delay = RandomBetween(plan.PollingStrategy.MinimumDelay, plan.PollingStrategy.MaximumDelay, random);
                 await Task.Delay(delay, cancellationToken);
 
@@ -278,7 +281,10 @@ public sealed class TomorrowReservationCoordinator(
             cancellationToken);
         if (fallbackSeats.Count == 0)
         {
-            activityLogService.Write(LogEntryKind.Info, "Grab", "目标座位暂不可预约，且没有可随机尝试的候选座位。");
+            var message = plan.UseRandomAvailableSeat
+                ? "随机空座模式暂未发现可预约的明日座位。"
+                : "目标座位暂不可预约，且没有可随机尝试的候选座位。";
+            activityLogService.Write(LogEntryKind.Info, "Grab", message);
             return TomorrowSeatSubmitOutcome.Unavailable;
         }
 
@@ -286,10 +292,10 @@ public sealed class TomorrowReservationCoordinator(
         foreach (var fallbackSeat in fallbackSeats)
         {
             attemptedSeatKeys.Add(fallbackSeat.SeatKey);
-            activityLogService.Write(
-                LogEntryKind.Info,
-                "Grab",
-                $"目标座位暂不可预约，随机尝试明日座位 {fallbackSeat.SeatName}。");
+            var message = plan.UseRandomAvailableSeat
+                ? $"随机选择明日空座 {fallbackSeat.SeatName}，正在提交预约请求。"
+                : $"目标座位暂不可预约，随机尝试明日座位 {fallbackSeat.SeatName}。";
+            activityLogService.Write(LogEntryKind.Info, "Grab", message);
 
             var outcome = await TrySubmitSeatAsync(cookie, plan.LibraryId, fallbackSeat, markRequestSent, cancellationToken);
             if (reservationSucceeded.IsCompletedSuccessfully ||

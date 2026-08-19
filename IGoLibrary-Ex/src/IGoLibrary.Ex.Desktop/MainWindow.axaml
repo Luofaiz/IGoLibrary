@@ -7,7 +7,7 @@
         x:Class="IGoLibrary.Ex.Desktop.MainWindow"
         x:Name="MainWindowRoot"
         x:DataType="vm:MainWindowViewModel"
-        Title="IGoLibrary-Ex"
+        Title="IGoLibrary"
         Width="1188"
         Height="774"
         MinWidth="1000"
@@ -81,6 +81,25 @@
       <Setter Property="FontSize" Value="13" />
       <Setter Property="Foreground" Value="{DynamicResource SemiTextSecondaryBrush}" />
       <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.guide-step-number">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentForegroundBrush}" />
+      <Setter Property="HorizontalAlignment" Value="Center" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.guide-card-title">
+      <Setter Property="FontSize" Value="18" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="{DynamicResource SemiTextPrimaryBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.guide-body">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{DynamicResource SemiTextSecondaryBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="LineHeight" Value="22" />
     </Style>
     <Style Selector="TextBlock.field-label">
       <Setter Property="FontSize" Value="13" />
@@ -324,9 +343,9 @@
             Background="{DynamicResource AppSidebarBrush}"
             BorderBrush="{DynamicResource AppSidebarBorderBrush}"
             BorderThickness="0,0,1,0">
-      <Grid RowDefinitions="40, *, Auto">
+      <Grid RowDefinitions="40, *, Auto, Auto">
         <!-- Window Title / Drag Area -->
-        <TextBlock Grid.Row="0" Text="IGoLibrary-Ex 端" FontWeight="Bold" FontSize="14" VerticalAlignment="Center" Margin="24,0,0,0" Opacity="0.7" IsHitTestVisible="False"/>
+        <TextBlock Grid.Row="0" Text="IGoLibrary" FontWeight="Bold" FontSize="14" VerticalAlignment="Center" Margin="24,0,0,0" Opacity="0.7" IsHitTestVisible="False"/>
         
         <!-- Navigation Menu -->
         <ListBox Grid.Row="1"
@@ -342,6 +361,14 @@
           <TextBlock Text="Cookie 到期时间" FontSize="12" Opacity="0.5" FontWeight="Bold"/>
           <TextBlock Text="{Binding SidebarCookieExpiryText}" FontSize="13" TextWrapping="Wrap" Foreground="{Binding SidebarCookieExpiryBrush}" Opacity="0.9"/>
         </StackPanel>
+
+        <ListBox Grid.Row="3"
+                 Classes="sidebar"
+                 ItemsSource="{Binding BottomSidebarItems}"
+                 SelectedItem="{Binding SelectedSidebarItem}"
+                 Margin="0,0,0,16"
+                 Background="Transparent"
+                 BorderThickness="0" />
       </Grid>
     </Border>
 
@@ -681,6 +708,14 @@
                   <TextBlock Text="{Binding SessionSummary}" Classes="helper-text" />
 
                   <StackPanel Spacing="16" IsVisible="{Binding IsUnauthorized}">
+                    <Button Content="电脑版微信授权"
+                            Click="OnStartDesktopWeChatAuthorizationClick"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center"
+                            Background="{DynamicResource AppAccentBrush}"
+                            Foreground="{DynamicResource AppAccentForegroundBrush}"
+                            FontWeight="Bold" />
+
                     <Border Background="{DynamicResource SemiColorFill0}"
                             BorderBrush="{DynamicResource SemiCardBorderBrush}"
                             BorderThickness="1"
@@ -692,7 +727,7 @@
                               MaxHeight="208"
                               Stretch="Uniform"
                               HorizontalAlignment="Center" />
-                        <TextBlock Text="微信扫一扫获取授权链接"
+                        <TextBlock Text="手机微信扫码授权"
                                   Classes="helper-text"
                                   HorizontalAlignment="Center"
                                   TextAlignment="Center" />
@@ -1744,6 +1779,159 @@
                   </Grid>
                 </StackPanel>
               </Border>
+            </Grid>
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- Tab 6: Guide -->
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                      VerticalScrollBarVisibility="Auto">
+          <StackPanel Spacing="20"
+                      Margin="0,0,16,0">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="page-title"
+                         Text="使用指南"
+                         Margin="0" />
+              <TextBlock Classes="helper-text"
+                         Text="从授权到抢座、明日预约和占座守护，按下面的顺序即可完成常用操作。" />
+            </StackPanel>
+
+            <Border Classes="semi-card Shadow"
+                    Background="{DynamicResource DashboardHeroBrush}"
+                    Padding="24">
+              <Grid ColumnDefinitions="*,Auto,*,Auto,*,Auto,*"
+                    ColumnSpacing="14">
+                <StackPanel Spacing="8">
+                  <Border Width="34" Height="34" CornerRadius="17"
+                          Background="{DynamicResource SemiAccentBrush}"
+                          HorizontalAlignment="Left">
+                    <TextBlock Classes="guide-step-number" Text="1" />
+                  </Border>
+                  <TextBlock Classes="guide-card-title" Text="完成授权" />
+                  <TextBlock Classes="guide-body" Text="打开“账户与场馆”，使用电脑版微信授权或手机扫码。" />
+                </StackPanel>
+                <PathIcon Grid.Column="1"
+                          Data="M8 5l7 7-7 7v-4H3v-6h5V5z"
+                          Width="18" Height="18"
+                          Foreground="{DynamicResource SemiTextTertiaryBrush}"
+                          VerticalAlignment="Center" />
+                <StackPanel Grid.Column="2" Spacing="8">
+                  <Border Width="34" Height="34" CornerRadius="17"
+                          Background="{DynamicResource SemiAccentBrush}"
+                          HorizontalAlignment="Left">
+                    <TextBlock Classes="guide-step-number" Text="2" />
+                  </Border>
+                  <TextBlock Classes="guide-card-title" Text="锁定场馆" />
+                  <TextBlock Classes="guide-body" Text="选择场馆并确认锁定，程序随后加载座位和预约状态。" />
+                </StackPanel>
+                <PathIcon Grid.Column="3"
+                          Data="M8 5l7 7-7 7v-4H3v-6h5V5z"
+                          Width="18" Height="18"
+                          Foreground="{DynamicResource SemiTextTertiaryBrush}"
+                          VerticalAlignment="Center" />
+                <StackPanel Grid.Column="4" Spacing="8">
+                  <Border Width="34" Height="34" CornerRadius="17"
+                          Background="{DynamicResource SemiAccentBrush}"
+                          HorizontalAlignment="Left">
+                    <TextBlock Classes="guide-step-number" Text="3" />
+                  </Border>
+                  <TextBlock Classes="guide-card-title" Text="配置任务" />
+                  <TextBlock Classes="guide-body" Text="选择今日或明日、目标座位、执行策略和启动时间。" />
+                </StackPanel>
+                <PathIcon Grid.Column="5"
+                          Data="M8 5l7 7-7 7v-4H3v-6h5V5z"
+                          Width="18" Height="18"
+                          Foreground="{DynamicResource SemiTextTertiaryBrush}"
+                          VerticalAlignment="Center" />
+                <StackPanel Grid.Column="6" Spacing="8">
+                  <Border Width="34" Height="34" CornerRadius="17"
+                          Background="{DynamicResource SemiAccentBrush}"
+                          HorizontalAlignment="Left">
+                    <TextBlock Classes="guide-step-number" Text="4" />
+                  </Border>
+                  <TextBlock Classes="guide-card-title" Text="保持运行" />
+                  <TextBlock Classes="guide-body" Text="开始监控后保持网络与程序运行，并通过日志确认状态。" />
+                </StackPanel>
+              </Grid>
+            </Border>
+
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="18">
+              <StackPanel Spacing="18">
+                <Border Classes="semi-card Shadow">
+                  <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <PathIcon Data="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+                                Width="22" Height="22"
+                                Foreground="{DynamicResource SemiAccentBrush}" />
+                      <TextBlock Classes="guide-card-title" Text="账户与场馆" />
+                    </StackPanel>
+                    <TextBlock Classes="guide-body"
+                               Text="电脑版微信授权会打开微信授权页面；也可以用手机扫描二维码，再让程序读取授权链接。授权成功后选择一个场馆，预览座位信息并点击锁定。程序会保存可恢复的会话和上次读取到的微信昵称。" />
+                    <Border Background="{DynamicResource DashboardMutedSurfaceBrush}"
+                            CornerRadius="12" Padding="12">
+                      <TextBlock Classes="guide-body"
+                                 Text="Cookie 有有效期。左侧会显示到期时间；失效后需要重新授权。切换账号时，先在账户页注销，再用新账号授权。" />
+                    </Border>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="semi-card Shadow">
+                  <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <PathIcon Data="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12.5 7H11v6l5.25 3.15.75-1.23-4.5-2.67z"
+                                Width="22" Height="22"
+                                Foreground="{DynamicResource SemiAccentBrush}" />
+                      <TextBlock Classes="guide-card-title" Text="占座守护" />
+                    </StackPanel>
+                    <TextBlock Classes="guide-body"
+                               Text="已有今日预约后，可选择“到期前”或“指定时间”触发重约。程序会在触发点取消当前预约并尝试重新预约原座，因此不是单纯延长时间。" />
+                    <TextBlock Classes="guide-body"
+                               FontWeight="SemiBold"
+                               Foreground="{DynamicResource SemiWarningTextBrush}"
+                               Text="取消到重新预约之间存在短暂窗口，原座可能被其他人抢走。开始前请确认风险，并避免同时在微信端手动操作同一预约。" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+
+              <StackPanel Grid.Column="1" Spacing="18">
+                <Border Classes="semi-card Shadow">
+                  <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <PathIcon Data="M7 2v11h3v9l7-12h-4l4-8z"
+                                Width="22" Height="22"
+                                Foreground="{DynamicResource SemiAccentBrush}" />
+                      <TextBlock Classes="guide-card-title" Text="今日抢座与明日预约" />
+                    </StackPanel>
+                    <TextBlock Classes="guide-body"
+                               Text="在“抢座”页选择预约类型。指定座位时先打开座位选择器；不挑座位时直接点击“一键随机空座”，今日和明日都支持随机预约可用座位。设置定时启动后，任务会等待到指定时间再开始。" />
+                    <Border Background="{DynamicResource DashboardMutedSurfaceBrush}"
+                            CornerRadius="12" Padding="12">
+                      <StackPanel Spacing="6">
+                        <TextBlock Classes="guide-body" Text="极限速度：约每 1 秒轮询，最快但更容易触发接口频率限制。" />
+                        <TextBlock Classes="guide-body" Text="随机延迟：每次约等待 4~8 秒，频率更分散。" />
+                        <TextBlock Classes="guide-body" Text="延迟 3 秒：固定约 3 秒一次，适合兼顾速度与稳定性。" />
+                      </StackPanel>
+                    </Border>
+                    <TextBlock Classes="guide-body"
+                               Text="“先获取列表判断状态”会先检查座位是否可用；“直接发送预约请求”更直接，但请求更密集。日志出现频率限制或连续错误时，应停止任务并稍后重试。" />
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="semi-card Shadow">
+                  <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <PathIcon Data="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm6-6V11a6 6 0 1 0-12 0v5l-2 2v1h16v-1l-2-2z"
+                                Width="22" Height="22"
+                                Foreground="{DynamicResource SemiAccentBrush}" />
+                      <TextBlock Classes="guide-card-title" Text="通知、设置与运行建议" />
+                    </StackPanel>
+                    <TextBlock Classes="guide-body"
+                               Text="通知设置支持本地弹窗、提示音和 SMTP 邮件提醒。系统设置可调整超时、重试、主题和接口高级配置；不了解 GraphQL 协议时不要修改高级模板。" />
+                    <TextBlock Classes="guide-body"
+                               Text="任务运行期间保持电脑联网，避免休眠、退出程序或重复启动多个实例。右上角关闭按钮在任务运行时通常会最小化到托盘；真正退出会停止所有监控任务。" />
+                  </StackPanel>
+                </Border>
+              </StackPanel>
             </Grid>
           </StackPanel>
         </ScrollViewer>

@@ -16,6 +16,7 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
     public Func<string, CancellationToken, Task<string>>? OnGetCookieFromCodeAsync { get; set; }
     public Func<string, CancellationToken, Task>? OnValidateCookieAsync { get; set; }
     public Func<string, CancellationToken, Task<IReadOnlyList<LibrarySummary>>>? OnGetLibrariesAsync { get; set; }
+    public Func<string, CancellationToken, Task<string?>>? OnGetCurrentUserNicknameAsync { get; set; }
     public Func<string, int, CancellationToken, Task<LibraryLayout>>? OnGetLibraryLayoutAsync { get; set; }
     public Func<string, int, CancellationToken, Task<LibraryLayout>>? OnGetPrereserveLibraryLayoutAsync { get; set; }
     public Func<string, int, CancellationToken, Task<LibraryRule>>? OnGetLibraryRuleAsync { get; set; }
@@ -35,6 +36,9 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
 
     public Task<IReadOnlyList<LibrarySummary>> GetLibrariesAsync(string cookie, CancellationToken cancellationToken = default)
         => OnGetLibrariesAsync?.Invoke(cookie, cancellationToken) ?? Task.FromResult<IReadOnlyList<LibrarySummary>>([]);
+
+    public Task<string?> GetCurrentUserNicknameAsync(string cookie, CancellationToken cancellationToken = default)
+        => OnGetCurrentUserNicknameAsync?.Invoke(cookie, cancellationToken) ?? Task.FromResult<string?>(null);
 
     public Task<LibraryLayout> GetLibraryLayoutAsync(string cookie, int libraryId, CancellationToken cancellationToken = default)
         => OnGetLibraryLayoutAsync?.Invoke(cookie, libraryId, cancellationToken)

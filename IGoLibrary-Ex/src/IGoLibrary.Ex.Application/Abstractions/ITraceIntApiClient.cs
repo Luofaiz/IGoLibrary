@@ -10,6 +10,8 @@ public interface ITraceIntApiClient
 
     Task<IReadOnlyList<LibrarySummary>> GetLibrariesAsync(string cookie, CancellationToken cancellationToken = default);
 
+    Task<string?> GetCurrentUserNicknameAsync(string cookie, CancellationToken cancellationToken = default);
+
     Task<LibraryLayout> GetLibraryLayoutAsync(string cookie, int libraryId, CancellationToken cancellationToken = default);
 
     Task<LibraryLayout> GetPrereserveLibraryLayoutAsync(string cookie, int libraryId, CancellationToken cancellationToken = default);

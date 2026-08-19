@@ -12,6 +12,54 @@ namespace IGoLibrary.Ex.Tests;
 public sealed class TraceIntApiClientTests
 {
     [Fact]
+    public async Task GetCurrentUserNicknameAsync_ReturnsTrimmedWechatNickname()
+    {
+        var handler = new SequenceHttpMessageHandler(
+            (_, _) => SequenceHttpMessageHandler.JsonResponseAsync("""
+                {"data":{"userAuth":{"currentUser":{"user_nick":"  图书馆用户  "}}}}
+                """));
+        var client = new TraceIntApiClient(
+            new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan },
+            new FakeProtocolTemplateStore(new ProtocolTemplateSet(
+                "https://example.com/ReplaceMeByCode",
+                "{\"query\":\"libraries\"}",
+                "{\"query\":\"layout\"}",
+                "{\"query\":\"rule\"}",
+                "{\"query\":\"reservation\"}",
+                "{\"query\":\"reserve\"}",
+                "{\"query\":\"cancel\"}")),
+            new FakeSettingsService(AppSettings.Default));
+
+        var nickname = await client.GetCurrentUserNicknameAsync("Authorization=a; SERVERID=b");
+
+        Assert.Equal("图书馆用户", nickname);
+    }
+
+    [Fact]
+    public async Task GetCurrentUserNicknameAsync_ReturnsNull_WhenNicknameIsBlank()
+    {
+        var handler = new SequenceHttpMessageHandler(
+            (_, _) => SequenceHttpMessageHandler.JsonResponseAsync("""
+                {"data":{"userAuth":{"currentUser":{"user_nick":"   "}}}}
+                """));
+        var client = new TraceIntApiClient(
+            new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan },
+            new FakeProtocolTemplateStore(new ProtocolTemplateSet(
+                "https://example.com/ReplaceMeByCode",
+                "{\"query\":\"libraries\"}",
+                "{\"query\":\"layout\"}",
+                "{\"query\":\"rule\"}",
+                "{\"query\":\"reservation\"}",
+                "{\"query\":\"reserve\"}",
+                "{\"query\":\"cancel\"}")),
+            new FakeSettingsService(AppSettings.Default));
+
+        var nickname = await client.GetCurrentUserNicknameAsync("Authorization=a; SERVERID=b");
+
+        Assert.Null(nickname);
+    }
+
+    [Fact]
     public async Task GetLibrariesAsync_RetriesTransientHttpFailures_UsingSavedRetryCount()
     {
         var handler = new SequenceHttpMessageHandler(
