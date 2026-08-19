@@ -1120,6 +1120,46 @@ public sealed class MainWindowViewModelTests
         Assert.Single(confirmationDialogService.Requests);
     }
 
+    [Fact]
+    public async Task CheckForUpdatesOnStartupAsync_ChecksWithoutShowingUpToDateToast()
+    {
+        var notifications = new FakeNotificationService();
+        var appUpdateService = new FakeAppUpdateService();
+        var viewModel = CreateViewModel(
+            notificationService: notifications,
+            appUpdateService: appUpdateService);
+
+        await viewModel.CheckForUpdatesOnStartupAsync();
+
+        Assert.Equal(1, appUpdateService.CheckCalls);
+        Assert.Empty(notifications.Infos);
+    }
+
+    [Fact]
+    public async Task CheckForUpdatesOnStartupAsync_UsesSameUpdatePromptWhenUpdateIsAvailable()
+    {
+        var appUpdateService = new FakeAppUpdateService
+        {
+            Result = new AppUpdateCheckResult(
+                true,
+                "1.0.0",
+                "1.0.1",
+                "启动检查测试",
+                "https://github.com/Luofaiz/IGoLibrary/releases/latest/download/IGoLibrarySetup.exe",
+                "abc123",
+                "https://github.com/Luofaiz/IGoLibrary/releases/latest")
+        };
+        var confirmationDialogService = new FakeConfirmationDialogService { NextResult = false };
+        var viewModel = CreateViewModel(
+            confirmationDialogService: confirmationDialogService,
+            appUpdateService: appUpdateService);
+
+        await viewModel.CheckForUpdatesOnStartupAsync();
+
+        Assert.Equal(1, appUpdateService.CheckCalls);
+        Assert.Single(confirmationDialogService.Requests);
+    }
+
     private static MainWindowViewModel CreateViewModel(
         FakeSessionService? sessionService = null,
         FakeLibraryService? libraryService = null,

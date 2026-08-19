@@ -983,6 +983,21 @@ public partial class MainWindowViewModel(
     [RelayCommand(CanExecute = nameof(CanCheckForUpdates))]
     private async Task CheckForUpdatesAsync()
     {
+        await CheckForUpdatesCoreAsync(notifyWhenUpToDate: true, showErrors: true);
+    }
+
+    /// <summary>
+    /// Checks GitHub once after the main window has finished loading. Startup checks
+    /// only notify the user when an update is available, so opening the app does not
+    /// produce a "already up to date" dialog every time.
+    /// </summary>
+    public Task CheckForUpdatesOnStartupAsync()
+    {
+        return CheckForUpdatesCoreAsync(notifyWhenUpToDate: false, showErrors: false);
+    }
+
+    private async Task CheckForUpdatesCoreAsync(bool notifyWhenUpToDate, bool showErrors)
+    {
         IsCheckingForUpdates = true;
         UpdateStatusText = "正在检查更新...";
 
@@ -992,7 +1007,10 @@ public partial class MainWindowViewModel(
             if (!result.UpdateAvailable)
             {
                 UpdateStatusText = $"当前已是最新版本（{result.CurrentVersion}）。";
-                await notificationService.ShowInfoAsync("已是最新版本", UpdateStatusText);
+                if (notifyWhenUpToDate)
+                {
+                    await notificationService.ShowInfoAsync("已是最新版本", UpdateStatusText);
+                }
                 return;
             }
 
@@ -1026,7 +1044,11 @@ public partial class MainWindowViewModel(
         catch (Exception ex)
         {
             UpdateStatusText = $"检查更新失败：{ex.Message}";
-            await errorDialogService.ShowErrorAsync("检查更新失败", ex.GetType().Name, ex.Message);
+            activityLogService.Write(LogEntryKind.Warning, "Update", UpdateStatusText);
+            if (showErrors)
+            {
+                await errorDialogService.ShowErrorAsync("检查更新失败", ex.GetType().Name, ex.Message);
+            }
         }
         finally
         {

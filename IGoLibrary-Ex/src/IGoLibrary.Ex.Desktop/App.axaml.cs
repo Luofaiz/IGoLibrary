@@ -39,6 +39,7 @@ public partial class App : Avalonia.Application
                 try
                 {
                     await viewModel.InitializeAsync();
+                    await viewModel.CheckForUpdatesOnStartupAsync();
                 }
                 catch (Exception ex)
                 {
