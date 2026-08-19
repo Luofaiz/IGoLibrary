@@ -78,14 +78,13 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public void SidebarItems_ExcludeGuideFromMainList_WhenUnauthorized()
+    public void SidebarItems_ExposeGuideLast_WhenUnauthorized()
     {
         var viewModel = CreateViewModel();
 
         var titles = viewModel.SidebarItems.Select(item => item.Title).ToArray();
 
-        Assert.Equal(["首页", "账户与场馆"], titles);
-        Assert.Equal("使用指南", viewModel.BottomSidebarItems.Single().Title);
+        Assert.Equal(["首页", "账户与场馆", "使用指南"], titles);
     }
 
     [Fact]
@@ -97,8 +96,7 @@ public sealed class MainWindowViewModelTests
 
         var titles = viewModel.SidebarItems.Select(item => item.Title).ToArray();
 
-        Assert.Equal(["首页", "账户与场馆", "抢座", "占座", "通知设置", "系统设置"], titles);
-        Assert.Equal("使用指南", viewModel.BottomSidebarItems.Single().Title);
+        Assert.Equal(["首页", "账户与场馆", "抢座", "占座", "通知设置", "系统设置", "使用指南"], titles);
     }
 
     [Fact]

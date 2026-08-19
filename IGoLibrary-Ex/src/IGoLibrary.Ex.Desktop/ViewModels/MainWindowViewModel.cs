@@ -88,7 +88,8 @@ public partial class MainWindowViewModel(
     private static readonly SidebarNavigationItem[] UnauthorizedSidebarItems =
     [
         HomeSidebarItem,
-        AccountAndVenueSidebarItem
+        AccountAndVenueSidebarItem,
+        GuideSidebarItem
     ];
     private static readonly SidebarNavigationItem[] AuthorizedSidebarItems =
     [
@@ -97,7 +98,8 @@ public partial class MainWindowViewModel(
         GrabSidebarItem,
         OccupySidebarItem,
         NotificationSettingsSidebarItem,
-        SettingsSidebarItem
+        SettingsSidebarItem,
+        GuideSidebarItem
     ];
     private IBrush GrabStateIdleBrush = appThemeService.CurrentPalette.IdleBrush;
     private IBrush GrabStateRunningBrush = appThemeService.CurrentPalette.RunningBrush;
@@ -141,10 +143,9 @@ public partial class MainWindowViewModel(
     public ObservableCollection<SidebarNavigationItem> SidebarItems { get; } =
     [
         HomeSidebarItem,
-        AccountAndVenueSidebarItem
+        AccountAndVenueSidebarItem,
+        GuideSidebarItem
     ];
-
-    public IReadOnlyList<SidebarNavigationItem> BottomSidebarItems { get; } = [GuideSidebarItem];
 
     public ObservableCollection<SeatItemViewModel> VisibleSeats { get; } = [];
 
@@ -3387,7 +3388,6 @@ public partial class MainWindowViewModel(
     private void SyncSelectedSidebarItem()
     {
         var target = SidebarItems.FirstOrDefault(item => item.PageIndex == SelectedTabIndex)
-            ?? BottomSidebarItems.FirstOrDefault(item => item.PageIndex == SelectedTabIndex)
             ?? SidebarItems.FirstOrDefault();
 
         _isSynchronizingSidebarSelection = true;

@@ -343,7 +343,7 @@
             Background="{DynamicResource AppSidebarBrush}"
             BorderBrush="{DynamicResource AppSidebarBorderBrush}"
             BorderThickness="0,0,1,0">
-      <Grid RowDefinitions="40, *, Auto, Auto">
+      <Grid RowDefinitions="40, *, Auto">
         <!-- Window Title / Drag Area -->
         <TextBlock Grid.Row="0" Text="IGoLibrary" FontWeight="Bold" FontSize="14" VerticalAlignment="Center" Margin="24,0,0,0" Opacity="0.7" IsHitTestVisible="False"/>
         
@@ -362,13 +362,6 @@
           <TextBlock Text="{Binding SidebarCookieExpiryText}" FontSize="13" TextWrapping="Wrap" Foreground="{Binding SidebarCookieExpiryBrush}" Opacity="0.9"/>
         </StackPanel>
 
-        <ListBox Grid.Row="3"
-                 Classes="sidebar"
-                 ItemsSource="{Binding BottomSidebarItems}"
-                 SelectedItem="{Binding SelectedSidebarItem}"
-                 Margin="0,0,0,16"
-                 Background="Transparent"
-                 BorderThickness="0" />
       </Grid>
     </Border>
 
