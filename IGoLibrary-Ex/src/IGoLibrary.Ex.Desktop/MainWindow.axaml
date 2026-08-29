@@ -1697,6 +1697,27 @@
                       </StackPanel>
                     </Grid>
 
+                    <Separator Background="{DynamicResource AppSeparatorBrush}" Margin="0,8"/>
+
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                      <StackPanel Spacing="6">
+                        <TextBlock FontSize="15"
+                                   FontWeight="SemiBold"
+                                   Text="每天 21:30 自动退座" />
+                        <TextBlock Classes="helper-text"
+                                   Text="先授权并保存会话；启用后会退出今日学习座位，程序无需提前打开。"
+                                   TextWrapping="Wrap" />
+                        <TextBlock Classes="helper-text"
+                                   Text="{Binding DailyCheckoutStatusText}"
+                                   TextWrapping="Wrap" />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1"
+                                    IsChecked="{Binding DailyCheckoutEnabled}"
+                                    OnContent="开"
+                                    OffContent="关"
+                                    VerticalAlignment="Center" />
+                    </Grid>
+
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,16,0,0">
                       <Button Content="💾 保存设置"
                               Command="{Binding SaveSettingsCommand}"
@@ -1920,6 +1941,8 @@
                     </StackPanel>
                     <TextBlock Classes="guide-body"
                                Text="通知设置支持本地弹窗、提示音和 SMTP 邮件提醒。系统设置可调整超时、重试、主题和接口高级配置；不了解 GraphQL 协议时不要修改高级模板。" />
+                    <TextBlock Classes="guide-body"
+                               Text="在系统设置启用“每天 21:30 自动退座”并保存后，Windows 会在程序未打开时自动恢复已保存的会话，退出今日学习座位；明日预约不会被取消。" />
                     <TextBlock Classes="guide-body"
                                Text="任务运行期间保持电脑联网，避免休眠、退出程序或重复启动多个实例。右上角关闭按钮在任务运行时通常会最小化到托盘；真正退出会停止所有监控任务。" />
                   </StackPanel>

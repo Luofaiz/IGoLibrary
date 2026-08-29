@@ -48,6 +48,43 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SaveSettingsAsync_ConfiguresDailyCheckoutTask_WhenEnabled()
+    {
+        var settingsService = new FakeSettingsService(AppSettings.Default);
+        var scheduler = new FakeDailyCheckoutTaskScheduler();
+        var viewModel = CreateViewModel(
+            settingsService: settingsService,
+            dailyCheckoutTaskScheduler: scheduler);
+        viewModel.DailyCheckoutEnabled = true;
+
+        await viewModel.SaveSettingsCommand.ExecuteAsync(null);
+
+        Assert.True(scheduler.LastEnabled);
+        Assert.True(settingsService.CurrentSettings.DailyCheckoutEnabled);
+        Assert.Contains("21:30", viewModel.DailyCheckoutStatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_DoesNotPersistDailyCheckout_WhenTaskCreationFails()
+    {
+        var settingsService = new FakeSettingsService(AppSettings.Default);
+        var scheduler = new FakeDailyCheckoutTaskScheduler
+        {
+            Exception = new InvalidOperationException("task scheduler unavailable")
+        };
+        var viewModel = CreateViewModel(
+            settingsService: settingsService,
+            dailyCheckoutTaskScheduler: scheduler);
+        viewModel.DailyCheckoutEnabled = true;
+
+        await viewModel.SaveSettingsCommand.ExecuteAsync(null);
+
+        Assert.False(viewModel.DailyCheckoutEnabled);
+        Assert.False(settingsService.CurrentSettings.DailyCheckoutEnabled);
+        Assert.Contains("任务配置失败", viewModel.DailyCheckoutStatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task ValidateManualCookieAsync_DoesNotRestoreStoredVenueSelection_OnFreshAuthorization()
     {
         var settingsService = new FakeSettingsService(AppSettings.Default with
@@ -1173,6 +1210,7 @@ public sealed class MainWindowViewModelTests
         FakeErrorDialogService? errorDialogService = null,
         FakeConfirmationDialogService? confirmationDialogService = null,
         FakeAppThemeService? appThemeService = null,
+        FakeDailyCheckoutTaskScheduler? dailyCheckoutTaskScheduler = null,
         FakeAppUpdateService? appUpdateService = null)
     {
         return new MainWindowViewModel(
@@ -1191,6 +1229,7 @@ public sealed class MainWindowViewModelTests
             confirmationDialogService ?? new FakeConfirmationDialogService(),
             appThemeService ?? new FakeAppThemeService(),
             new AppWindowService(),
+            dailyCheckoutTaskScheduler ?? new FakeDailyCheckoutTaskScheduler(),
             appUpdateService ?? new FakeAppUpdateService());
     }
 

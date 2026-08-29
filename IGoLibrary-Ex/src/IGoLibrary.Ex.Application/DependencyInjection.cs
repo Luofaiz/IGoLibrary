@@ -17,6 +17,7 @@ public static class DependencyInjection
         services.AddSingleton<IGrabSeatCoordinator, GrabSeatCoordinator>();
         services.AddSingleton<ITomorrowReservationCoordinator, TomorrowReservationCoordinator>();
         services.AddSingleton<IOccupySeatCoordinator, OccupySeatCoordinator>();
+        services.AddSingleton<IDailyCheckoutService, DailyCheckoutService>();
         return services;
     }
 }

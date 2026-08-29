@@ -16,7 +16,8 @@ public sealed record AppSettings(
     CookieExpiryAlertSettings? CookieExpiryAlerts = null,
     int SuccessfulReservationCount = 0,
     long TotalGuardSeconds = 0,
-    string? CachedUserNickname = null)
+    string? CachedUserNickname = null,
+    bool DailyCheckoutEnabled = false)
 {
     public static AppSettings Default { get; } = new(
         NotificationsEnabled: true,
@@ -32,5 +33,6 @@ public sealed record AppSettings(
         CookieExpiryAlerts: CookieExpiryAlertSettings.Default,
         SuccessfulReservationCount: 0,
         TotalGuardSeconds: 0,
-        CachedUserNickname: null);
+        CachedUserNickname: null,
+        DailyCheckoutEnabled: false);
 }

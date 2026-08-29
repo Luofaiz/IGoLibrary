@@ -33,6 +33,7 @@ public partial class MainWindowViewModel(
     IConfirmationDialogService confirmationDialogService,
     IAppThemeService appThemeService,
     AppWindowService appWindowService,
+    IDailyCheckoutTaskScheduler dailyCheckoutTaskScheduler,
     IAppUpdateService appUpdateService) : ViewModelBase
 {
     private readonly IAppThemeService _appThemeService = appThemeService;
@@ -491,6 +492,12 @@ public partial class MainWindowViewModel(
 
     [ObservableProperty]
     private int retryCount = 3;
+
+    [ObservableProperty]
+    private bool dailyCheckoutEnabled;
+
+    [ObservableProperty]
+    private string dailyCheckoutStatusText = "未启用。";
 
     [ObservableProperty]
     private int selectedAppThemeModeIndex;
@@ -1871,6 +1878,23 @@ public partial class MainWindowViewModel(
     {
         CancelPendingNotificationSettingsAutoSave();
         var current = await settingsService.LoadAsync();
+        var persistedDailyCheckoutEnabled = current.DailyCheckoutEnabled;
+        try
+        {
+            await dailyCheckoutTaskScheduler.ConfigureAsync(DailyCheckoutEnabled);
+            persistedDailyCheckoutEnabled = DailyCheckoutEnabled;
+            DailyCheckoutStatusText = DailyCheckoutEnabled
+                ? "已启用，每天 21:30 自动执行。"
+                : "未启用。";
+        }
+        catch (Exception ex)
+        {
+            DailyCheckoutEnabled = current.DailyCheckoutEnabled;
+            DailyCheckoutStatusText = $"任务配置失败：{ex.Message}";
+            activityLogService.Write(LogEntryKind.Error, "DailyCheckout", DailyCheckoutStatusText);
+            await notificationService.ShowWarningAsync("每日自动退座设置失败", ex.Message);
+        }
+
         var settings = current with
         {
             NotificationsEnabled = NotificationsEnabled,
@@ -1888,7 +1912,8 @@ public partial class MainWindowViewModel(
             LastLibraryId = SelectedLibrary?.LibraryId,
             LastLibraryName = SelectedLibrary?.Name,
             SuccessfulReservationCount = _historicalSuccessCount,
-            TotalGuardSeconds = GetCurrentTotalGuardSeconds(DateTimeOffset.Now)
+            TotalGuardSeconds = GetCurrentTotalGuardSeconds(DateTimeOffset.Now),
+            DailyCheckoutEnabled = persistedDailyCheckoutEnabled
         };
         await settingsService.SaveAsync(settings);
         await _appThemeService.ApplySettingsAsync(settings);
@@ -1997,6 +2022,10 @@ public partial class MainWindowViewModel(
             CustomApiOverridesEnabled = settings.CustomApiOverridesEnabled;
             ApiTimeoutSeconds = settings.ApiTimeoutSeconds;
             RetryCount = settings.RetryCount;
+            DailyCheckoutEnabled = settings.DailyCheckoutEnabled;
+            DailyCheckoutStatusText = DailyCheckoutEnabled
+                ? "已启用，每天 21:30 自动执行。"
+                : "未启用。";
             SelectedAppThemeModeIndex = (int)settings.ThemeMode;
             UseSystemAccent = settings.UseSystemAccent;
             SelectedGrabReservationStrategyIndex = (int)settings.GrabReservationStrategy;
@@ -2022,6 +2051,19 @@ public partial class MainWindowViewModel(
             }
             HomeHistoricalSuccessCount = _historicalSuccessCount;
             UpdateHomeDashboardPresentation();
+
+            if (DailyCheckoutEnabled)
+            {
+                try
+                {
+                    await dailyCheckoutTaskScheduler.ConfigureAsync(enabled: true);
+                }
+                catch (Exception ex)
+                {
+                    DailyCheckoutStatusText = $"任务修复失败：{ex.Message}";
+                    activityLogService.Write(LogEntryKind.Warning, "DailyCheckout", DailyCheckoutStatusText);
+                }
+            }
         }
         finally
         {

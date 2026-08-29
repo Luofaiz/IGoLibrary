@@ -10,6 +10,7 @@ namespace IGoLibrary.Ex.Desktop;
 
 internal static class Program
 {
+    private const string ScheduledCheckoutArgument = "--scheduled-checkout";
     private static bool _globalExceptionLoggingRegistered;
     private static int _skipNextUnhandledExceptionLog;
     public static IHost? Host { get; private set; }
@@ -25,6 +26,12 @@ internal static class Program
             Host = HostBuilderFactory.Create(args, sharedLogWriter).Build();
             Host.Start();
             Host.Services.GetRequiredService<TraceListenerRegistrar>().Attach();
+            if (args.Contains(ScheduledCheckoutArgument, StringComparer.OrdinalIgnoreCase))
+            {
+                RunScheduledCheckoutAsync(Host.Services, sharedLogWriter).GetAwaiter().GetResult();
+                return;
+            }
+
             BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         }
         catch (Exception ex)
@@ -80,6 +87,40 @@ internal static class Program
             .UsePlatformDetect()
             .WithInterFont()
             .LogToTrace();
+
+    private static async Task RunScheduledCheckoutAsync(IServiceProvider services, IAppLogWriter logWriter)
+    {
+        await services.GetRequiredService<IAppDataInitializer>().InitializeAsync();
+        var result = await services.GetRequiredService<IDailyCheckoutService>().RunAsync();
+        if (result.Succeeded)
+        {
+            logWriter.Write(LogLevel.Information, "DailyCheckout", result.Message);
+            Environment.ExitCode = 0;
+            return;
+        }
+
+        logWriter.Write(LogLevel.Error, "DailyCheckout", result.Message);
+        try
+        {
+            var settings = await services.GetRequiredService<ISettingsService>().LoadAsync();
+            var emailSettings = settings.CookieExpiryAlerts?.Email;
+            if (emailSettings is { Enabled: true })
+            {
+                await services.GetRequiredService<IEmailAlertSender>().SendAsync(
+                    emailSettings,
+                    "IGoLibrary 每日自动退座失败",
+                    $"执行时间：{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}{Environment.NewLine}" +
+                    $"失败原因：{result.Message}{Environment.NewLine}{Environment.NewLine}" +
+                    "请打开 IGoLibrary 检查登录状态和任务日志。");
+            }
+        }
+        catch (Exception ex)
+        {
+            logWriter.Write(LogLevel.Warning, "DailyCheckout", $"发送自动退座失败邮件时出错：{ex.Message}", ex);
+        }
+
+        Environment.ExitCode = 2;
+    }
 
     private static void RegisterGlobalExceptionLogging(IAppLogWriter logWriter)
     {

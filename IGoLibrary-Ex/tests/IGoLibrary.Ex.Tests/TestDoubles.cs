@@ -246,6 +246,19 @@ internal sealed class FakeAppUpdateService : IAppUpdateService
     }
 }
 
+internal sealed class FakeDailyCheckoutTaskScheduler : IDailyCheckoutTaskScheduler
+{
+    public bool? LastEnabled { get; private set; }
+
+    public Exception? Exception { get; set; }
+
+    public Task ConfigureAsync(bool enabled, CancellationToken cancellationToken = default)
+    {
+        LastEnabled = enabled;
+        return Exception is null ? Task.CompletedTask : Task.FromException(Exception);
+    }
+}
+
 internal sealed class FakeAppThemeService : IAppThemeService
 {
     private static readonly AppThemePalette LightPalette = new(
