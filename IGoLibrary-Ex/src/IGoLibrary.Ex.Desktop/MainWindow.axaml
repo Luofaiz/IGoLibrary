@@ -582,7 +582,7 @@
                                     </StackPanel>
                                   </Border>
 
-                                  <Button Content="取消预约"
+                                  <Button Content="{Binding CancelActionText}"
                                           Classes="Secondary"
                                           Command="{Binding DataContext.CancelReservationRecordCommand, ElementName=MainWindowRoot}"
                                           CommandParameter="{Binding .}"
@@ -1401,7 +1401,44 @@
           </Grid>
         </Grid>
 
-        <!-- Tab 4: Notification Settings -->
+        <!-- Tab 4: Daily Checkout -->
+        <ScrollViewer>
+          <StackPanel Spacing="24" Margin="0,0,16,0">
+            <TextBlock Classes="page-title" Text="退座" />
+            <Border Classes="card">
+              <StackPanel Spacing="16">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="section-title" Text="每天定时自动退座" />
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <TextBlock Classes="helper-text" Text="退座时间" VerticalAlignment="Center" />
+                      <TextBox Text="{Binding DailyCheckoutTime}" Width="100" Watermark="HH:mm" />
+                    </StackPanel>
+                    <TextBlock Classes="helper-text"
+                               Text="自动退座会正常结束当天的学习记录，便于累计学习积分并在公众号中兑换可用道具。具体积分和兑换规则以公众号当前规则为准。"
+                               TextWrapping="Wrap" />
+                    <TextBlock Classes="helper-text"
+                               Text="启用后，Windows 会每天按上方设置的时间自动恢复已保存的登录会话，并退出今日正在学习的座位；明日预约不会被取消。"
+                               TextWrapping="Wrap" />
+                    <TextBlock Classes="helper-text"
+                               Text="需要先完成授权并勾选记住登录状态。电脑睡眠时可唤醒执行，关机时无法执行。"
+                               TextWrapping="Wrap" />
+                    <TextBlock Classes="helper-text"
+                               Text="{Binding DailyCheckoutStatusText}"
+                               TextWrapping="Wrap" />
+                  </StackPanel>
+                  <ToggleSwitch Grid.Column="1"
+                                IsChecked="{Binding DailyCheckoutEnabled}"
+                                OnContent="开"
+                                OffContent="关"
+                                VerticalAlignment="Center" />
+                </Grid>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+
+        <!-- Tab 5: Notification Settings -->
         <ScrollViewer>
           <StackPanel Spacing="24"
                       Margin="0,0,16,0"
@@ -1657,7 +1694,7 @@
           </StackPanel>
         </ScrollViewer>
 
-        <!-- Tab 5: Settings -->
+        <!-- Tab 6: Settings -->
         <ScrollViewer>
           <StackPanel Spacing="24" Margin="0,0,16,0">
             <TextBlock Classes="page-title" Text="系统设置" />
@@ -1695,27 +1732,6 @@
                         <CheckBox Content="跟随系统主题色"
                                   IsChecked="{Binding UseSystemAccent}" />
                       </StackPanel>
-                    </Grid>
-
-                    <Separator Background="{DynamicResource AppSeparatorBrush}" Margin="0,8"/>
-
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                      <StackPanel Spacing="6">
-                        <TextBlock FontSize="15"
-                                   FontWeight="SemiBold"
-                                   Text="每天 21:30 自动退座" />
-                        <TextBlock Classes="helper-text"
-                                   Text="先授权并保存会话；启用后会退出今日学习座位，程序无需提前打开。"
-                                   TextWrapping="Wrap" />
-                        <TextBlock Classes="helper-text"
-                                   Text="{Binding DailyCheckoutStatusText}"
-                                   TextWrapping="Wrap" />
-                      </StackPanel>
-                      <ToggleSwitch Grid.Column="1"
-                                    IsChecked="{Binding DailyCheckoutEnabled}"
-                                    OnContent="开"
-                                    OffContent="关"
-                                    VerticalAlignment="Center" />
                     </Grid>
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="12" Margin="0,16,0,0">
@@ -1797,7 +1813,7 @@
           </StackPanel>
         </ScrollViewer>
 
-        <!-- Tab 6: Guide -->
+        <!-- Tab 7: Guide -->
         <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                       VerticalScrollBarVisibility="Auto">
           <StackPanel Spacing="20"
@@ -1807,7 +1823,7 @@
                          Text="使用指南"
                          Margin="0" />
               <TextBlock Classes="helper-text"
-                         Text="从授权到抢座、明日预约和占座守护，按下面的顺序即可完成常用操作。" />
+                         Text="从授权到抢座、明日预约、占座守护和自动退座，按下面的说明即可完成常用操作。" />
             </StackPanel>
 
             <Border Classes="semi-card Shadow"
@@ -1905,6 +1921,26 @@
                                Text="取消到重新预约之间存在短暂窗口，原座可能被其他人抢走。开始前请确认风险，并避免同时在微信端手动操作同一预约。" />
                   </StackPanel>
                 </Border>
+
+                <Border Classes="semi-card Shadow">
+                  <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <PathIcon Data="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 5h-2v6l5 3 1-1.7-4-2.3z"
+                                Width="22" Height="22"
+                                Foreground="{DynamicResource SemiAccentBrush}" />
+                      <TextBlock Classes="guide-card-title" Text="每日自动退座" />
+                    </StackPanel>
+                    <TextBlock Classes="guide-body"
+                               Text="退座会正常结束当天的学习记录，便于累计学习积分并在公众号中兑换可用道具。具体积分和兑换规则以公众号当前规则为准。" />
+                    <TextBlock Classes="guide-body"
+                               Text="进入左侧“退座”页面，输入每日执行时间并打开开关，Windows 会立即创建按该时间执行的任务计划；关闭开关会立即删除任务，不需要再点击保存。" />
+                    <Border Background="{DynamicResource DashboardMutedSurfaceBrush}"
+                            CornerRadius="12" Padding="12">
+                      <TextBlock Classes="guide-body"
+                                 Text="需提前授权并保存登录状态。程序无需保持打开，锁屏不影响执行；睡眠或待机时系统会尝试唤醒。电脑关机、Windows 用户已注销、网络不可用或登录会话彻底过期时，无法保证自动退座成功。" />
+                    </Border>
+                  </StackPanel>
+                </Border>
               </StackPanel>
 
               <StackPanel Grid.Column="1" Spacing="18">
@@ -1941,8 +1977,6 @@
                     </StackPanel>
                     <TextBlock Classes="guide-body"
                                Text="通知设置支持本地弹窗、提示音和 SMTP 邮件提醒。系统设置可调整超时、重试、主题和接口高级配置；不了解 GraphQL 协议时不要修改高级模板。" />
-                    <TextBlock Classes="guide-body"
-                               Text="在系统设置启用“每天 21:30 自动退座”并保存后，Windows 会在程序未打开时自动恢复已保存的会话，退出今日学习座位；明日预约不会被取消。" />
                     <TextBlock Classes="guide-body"
                                Text="任务运行期间保持电脑联网，避免休眠、退出程序或重复启动多个实例。右上角关闭按钮在任务运行时通常会最小化到托盘；真正退出会停止所有监控任务。" />
                   </StackPanel>

@@ -250,11 +250,14 @@ internal sealed class FakeDailyCheckoutTaskScheduler : IDailyCheckoutTaskSchedul
 {
     public bool? LastEnabled { get; private set; }
 
+    public TimeSpan? LastCheckoutTime { get; private set; }
+
     public Exception? Exception { get; set; }
 
-    public Task ConfigureAsync(bool enabled, CancellationToken cancellationToken = default)
+    public Task ConfigureAsync(bool enabled, TimeSpan checkoutTime, CancellationToken cancellationToken = default)
     {
         LastEnabled = enabled;
+        LastCheckoutTime = checkoutTime;
         return Exception is null ? Task.CompletedTask : Task.FromException(Exception);
     }
 }

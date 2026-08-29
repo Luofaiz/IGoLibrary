@@ -55,9 +55,10 @@ public partial class MainWindowViewModel(
     private string _lockedVenueOpenTimeText = "--";
     private string _lockedVenueCloseTimeText = "--";
     private static readonly CultureInfo DashboardCulture = CultureInfo.GetCultureInfo("zh-CN");
-    private const int NotificationSettingsTabIndex = 4;
-    private const int SystemSettingsTabIndex = 5;
-    public const int GuideTabIndex = 6;
+    private const int DailyCheckoutTabIndex = 4;
+    private const int NotificationSettingsTabIndex = 5;
+    private const int SystemSettingsTabIndex = 6;
+    public const int GuideTabIndex = 7;
     private static readonly SidebarNavigationItem HomeSidebarItem = new(
         0,
         "首页",
@@ -74,6 +75,10 @@ public partial class MainWindowViewModel(
         3,
         "占座",
         "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z M12.5 7H11v6l5.25 3.15.75-1.23-4.5-2.67z");
+    private static readonly SidebarNavigationItem DailyCheckoutSidebarItem = new(
+        DailyCheckoutTabIndex,
+        "退座",
+        "M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 5h-2v6l5 3 1-1.7-4-2.3z");
     private static readonly SidebarNavigationItem NotificationSettingsSidebarItem = new(
         NotificationSettingsTabIndex,
         "通知设置",
@@ -98,6 +103,7 @@ public partial class MainWindowViewModel(
         AccountAndVenueSidebarItem,
         GrabSidebarItem,
         OccupySidebarItem,
+        DailyCheckoutSidebarItem,
         NotificationSettingsSidebarItem,
         SettingsSidebarItem,
         GuideSidebarItem
@@ -131,6 +137,8 @@ public partial class MainWindowViewModel(
     private DateTimeOffset? _lastRecordedOccupySuccessAt;
     private bool _isSynchronizingSidebarSelection;
     private bool _isLoadingSettings;
+    private bool _isUpdatingDailyCheckoutToggle;
+    private readonly SemaphoreSlim _dailyCheckoutSettingsGate = new(1, 1);
     private bool _notificationSettingsLoaded;
     private CancellationTokenSource? _notificationSettingsAutoSaveCts;
     private bool _themePaletteSubscribed;
@@ -229,7 +237,7 @@ public partial class MainWindowViewModel(
 
     public bool HasNoCurrentReservation => !HasCurrentReservation;
 
-    public bool CanCancelCurrentReservation => _currentReservation is { IsCheckedIn: false } && !IsCancellingCurrentReservation;
+    public bool CanCancelCurrentReservation => _currentReservation is not null && !IsCancellingCurrentReservation;
 
     public bool CanCancelReservationRecord => !IsCancellingCurrentReservation;
 
@@ -497,7 +505,12 @@ public partial class MainWindowViewModel(
     private bool dailyCheckoutEnabled;
 
     [ObservableProperty]
+    private string dailyCheckoutTime = "21:30";
+
+    [ObservableProperty]
     private string dailyCheckoutStatusText = "未启用。";
+
+    internal Task DailyCheckoutConfigurationTask { get; private set; } = Task.CompletedTask;
 
     [ObservableProperty]
     private int selectedAppThemeModeIndex;
@@ -917,6 +930,28 @@ public partial class MainWindowViewModel(
     partial void OnCookieLocalToastEnabledChanged(bool value) => ScheduleNotificationSettingsAutoSave();
 
     partial void OnCookieLocalSoundEnabledChanged(bool value) => ScheduleNotificationSettingsAutoSave();
+
+    partial void OnDailyCheckoutEnabledChanged(bool value)
+    {
+        if (_isLoadingSettings || _isUpdatingDailyCheckoutToggle)
+        {
+            return;
+        }
+
+        DailyCheckoutStatusText = value ? "正在创建每日退座任务..." : "正在关闭每日退座任务...";
+        DailyCheckoutConfigurationTask = ApplyDailyCheckoutSettingAsync(value);
+    }
+
+    partial void OnDailyCheckoutTimeChanged(string value)
+    {
+        if (_isLoadingSettings || _isUpdatingDailyCheckoutToggle || !DailyCheckoutEnabled)
+        {
+            return;
+        }
+
+        DailyCheckoutStatusText = "正在更新每日退座任务...";
+        DailyCheckoutConfigurationTask = ApplyDailyCheckoutSettingAsync(true);
+    }
 
     partial void OnSelectedLibraryChanged(LibrarySummary? value)
     {
@@ -1659,16 +1694,12 @@ public partial class MainWindowViewModel(
         }
 
         var reservation = _currentReservation;
-        if (reservation.IsCheckedIn)
-        {
-            await notificationService.ShowWarningAsync("无法取消预约", "当前座位已签到，状态为学习中，不能取消或退座。");
-            return;
-        }
-
         var confirmed = await confirmationDialogService.ConfirmAsync(
-            "确认取消预约",
-            $"确定要取消 {reservation.LibraryName} {reservation.SeatName} 的预约吗？",
-            "取消预约");
+            reservation.IsCheckedIn ? "确认退座" : "确认取消预约",
+            reservation.IsCheckedIn
+                ? $"确定要退出 {reservation.LibraryName} {reservation.SeatName} 的学习吗？"
+                : $"确定要取消 {reservation.LibraryName} {reservation.SeatName} 的预约吗？",
+            reservation.IsCheckedIn ? "退座" : "取消预约");
         if (!confirmed)
         {
             return;
@@ -1698,9 +1729,14 @@ public partial class MainWindowViewModel(
                 return;
             }
 
-            activityLogService.Write(LogEntryKind.Success, "Occupy", $"{reservation.SeatName} 已手动取消预约。");
+            activityLogService.Write(
+                LogEntryKind.Success,
+                "Occupy",
+                reservation.IsCheckedIn ? $"{reservation.SeatName} 已手动退座。" : $"{reservation.SeatName} 已手动取消预约。");
             RemoveCancelledReservationFromPresentation(reservation);
-            await notificationService.ShowSuccessAsync("已取消预约", $"{reservation.SeatName} 已取消预约。");
+            await notificationService.ShowSuccessAsync(
+                reservation.IsCheckedIn ? "已退座" : "已取消预约",
+                reservation.IsCheckedIn ? $"{reservation.SeatName} 已退座。" : $"{reservation.SeatName} 已取消预约。");
         }
         catch (Exception ex)
         {
@@ -1724,7 +1760,7 @@ public partial class MainWindowViewModel(
         var reservation = recordViewModel.Record;
         if (!reservation.CanCancel)
         {
-            await notificationService.ShowWarningAsync("无法取消预约", "这条预约记录已签到或缺少取消所需的信息，请刷新预约记录后重试。");
+            await notificationService.ShowWarningAsync("无法操作", "这条预约记录缺少操作所需的信息，请刷新预约记录后重试。");
             return;
         }
 
@@ -1736,9 +1772,11 @@ public partial class MainWindowViewModel(
         }
 
         var confirmed = await confirmationDialogService.ConfirmAsync(
-            "确认取消预约",
-            $"确定要取消 {GetReservationLogName(reservation)} 吗？",
-            "取消预约");
+            reservation.IsCheckedIn ? "确认退座" : "确认取消预约",
+            reservation.IsCheckedIn
+                ? $"确定要退出 {GetReservationLogName(reservation)} 的学习吗？"
+                : $"确定要取消 {GetReservationLogName(reservation)} 吗？",
+            reservation.IsCheckedIn ? "退座" : "取消预约");
         if (!confirmed)
         {
             return;
@@ -1774,9 +1812,18 @@ public partial class MainWindowViewModel(
                 return;
             }
 
-            activityLogService.Write(LogEntryKind.Success, "Occupy", $"{GetReservationLogName(reservation)} 已手动取消预约。");
+            activityLogService.Write(
+                LogEntryKind.Success,
+                "Occupy",
+                reservation.IsCheckedIn
+                    ? $"{GetReservationLogName(reservation)} 已手动退座。"
+                    : $"{GetReservationLogName(reservation)} 已手动取消预约。");
             RemoveCancelledReservationFromPresentation(reservation);
-            await notificationService.ShowSuccessAsync("已取消预约", $"{GetReservationLogName(reservation)} 已取消预约。");
+            await notificationService.ShowSuccessAsync(
+                reservation.IsCheckedIn ? "已退座" : "已取消预约",
+                reservation.IsCheckedIn
+                    ? $"{GetReservationLogName(reservation)} 已退座。"
+                    : $"{GetReservationLogName(reservation)} 已取消预约。");
         }
         catch (Exception ex)
         {
@@ -1878,22 +1925,6 @@ public partial class MainWindowViewModel(
     {
         CancelPendingNotificationSettingsAutoSave();
         var current = await settingsService.LoadAsync();
-        var persistedDailyCheckoutEnabled = current.DailyCheckoutEnabled;
-        try
-        {
-            await dailyCheckoutTaskScheduler.ConfigureAsync(DailyCheckoutEnabled);
-            persistedDailyCheckoutEnabled = DailyCheckoutEnabled;
-            DailyCheckoutStatusText = DailyCheckoutEnabled
-                ? "已启用，每天 21:30 自动执行。"
-                : "未启用。";
-        }
-        catch (Exception ex)
-        {
-            DailyCheckoutEnabled = current.DailyCheckoutEnabled;
-            DailyCheckoutStatusText = $"任务配置失败：{ex.Message}";
-            activityLogService.Write(LogEntryKind.Error, "DailyCheckout", DailyCheckoutStatusText);
-            await notificationService.ShowWarningAsync("每日自动退座设置失败", ex.Message);
-        }
 
         var settings = current with
         {
@@ -1913,11 +1944,63 @@ public partial class MainWindowViewModel(
             LastLibraryName = SelectedLibrary?.Name,
             SuccessfulReservationCount = _historicalSuccessCount,
             TotalGuardSeconds = GetCurrentTotalGuardSeconds(DateTimeOffset.Now),
-            DailyCheckoutEnabled = persistedDailyCheckoutEnabled
+            DailyCheckoutEnabled = DailyCheckoutEnabled
         };
         await settingsService.SaveAsync(settings);
         await _appThemeService.ApplySettingsAsync(settings);
         await notificationService.ShowSuccessAsync("设置已保存", "应用设置已写入本地数据库。");
+    }
+
+    private async Task ApplyDailyCheckoutSettingAsync(bool enabled)
+    {
+        await _dailyCheckoutSettingsGate.WaitAsync();
+        try
+        {
+            var current = await settingsService.LoadAsync();
+            try
+            {
+                if (!TryParseDailyCheckoutTime(DailyCheckoutTime, out var checkoutTime))
+                {
+                    throw new InvalidOperationException("退座时间格式不正确，请使用 HH:mm，例如 21:30。");
+                }
+
+                var normalizedTime = checkoutTime.ToString(@"hh\:mm");
+                await dailyCheckoutTaskScheduler.ConfigureAsync(enabled, checkoutTime);
+                await settingsService.SaveAsync(current with { DailyCheckoutEnabled = enabled, DailyCheckoutTime = normalizedTime });
+                DailyCheckoutTime = normalizedTime;
+                DailyCheckoutStatusText = enabled
+                    ? $"已启用，Windows 将在每天 {normalizedTime} 唤醒电脑并自动退座。"
+                    : "未启用，Windows 每日退座任务已删除。";
+                activityLogService.Write(LogEntryKind.Info, "DailyCheckout", DailyCheckoutStatusText);
+            }
+            catch (Exception ex)
+            {
+                _isUpdatingDailyCheckoutToggle = true;
+                try
+                {
+                    DailyCheckoutEnabled = current.DailyCheckoutEnabled;
+                }
+                finally
+                {
+                    _isUpdatingDailyCheckoutToggle = false;
+                }
+
+                DailyCheckoutStatusText = $"任务配置失败：{ex.Message}";
+                activityLogService.Write(LogEntryKind.Error, "DailyCheckout", DailyCheckoutStatusText);
+                await notificationService.ShowWarningAsync("每日自动退座设置失败", ex.Message);
+            }
+        }
+        finally
+        {
+            _dailyCheckoutSettingsGate.Release();
+        }
+    }
+
+    private static bool TryParseDailyCheckoutTime(string? value, out TimeSpan checkoutTime)
+    {
+        checkoutTime = default;
+        return TimeSpan.TryParseExact(value?.Trim(), [@"hh\:mm", @"h\:mm"], CultureInfo.InvariantCulture, out checkoutTime) &&
+               checkoutTime >= TimeSpan.Zero && checkoutTime < TimeSpan.FromDays(1);
     }
 
     [RelayCommand]
@@ -2023,8 +2106,9 @@ public partial class MainWindowViewModel(
             ApiTimeoutSeconds = settings.ApiTimeoutSeconds;
             RetryCount = settings.RetryCount;
             DailyCheckoutEnabled = settings.DailyCheckoutEnabled;
+            DailyCheckoutTime = string.IsNullOrWhiteSpace(settings.DailyCheckoutTime) ? "21:30" : settings.DailyCheckoutTime;
             DailyCheckoutStatusText = DailyCheckoutEnabled
-                ? "已启用，每天 21:30 自动执行。"
+                ? $"已启用，每天 {DailyCheckoutTime} 自动执行。"
                 : "未启用。";
             SelectedAppThemeModeIndex = (int)settings.ThemeMode;
             UseSystemAccent = settings.UseSystemAccent;
@@ -2056,7 +2140,10 @@ public partial class MainWindowViewModel(
             {
                 try
                 {
-                    await dailyCheckoutTaskScheduler.ConfigureAsync(enabled: true);
+                    if (TryParseDailyCheckoutTime(DailyCheckoutTime, out var checkoutTime))
+                    {
+                        await dailyCheckoutTaskScheduler.ConfigureAsync(enabled: true, checkoutTime);
+                    }
                 }
                 catch (Exception ex)
                 {

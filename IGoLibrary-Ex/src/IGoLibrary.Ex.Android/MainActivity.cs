@@ -309,7 +309,8 @@ public sealed class MainActivity : Activity
         _cancelReservationButton = CreateButton("取消今日预约");
         _cancelTomorrowReservationButton = CreateButton("取消明日预约");
         _refreshReservationButton.Click += async (_, _) => await RunBusyAsync("查询预约", RefreshReservationAsync);
-        _cancelReservationButton.Click += async (_, _) => await RunBusyAsync("取消今日预约", CancelReservationAsync);
+        _cancelReservationButton.Click += async (_, _) =>
+            await RunBusyAsync(_currentReservation?.IsCheckedIn == true ? "退座" : "取消今日预约", CancelReservationAsync);
         _cancelTomorrowReservationButton.Click += async (_, _) => await RunBusyAsync("取消明日预约", CancelTomorrowReservationAsync);
         AddButtonRow(content, 10, _refreshReservationButton, _cancelReservationButton);
         content.AddView(_cancelTomorrowReservationButton, MatchWrap(top: 10));
@@ -744,6 +745,7 @@ public sealed class MainActivity : Activity
         _runtimeState.ReservationRecords = _reservationRecords;
         _currentReservation = BuildTodayReservationInfo(_reservationRecords);
         _runtimeState.CurrentReservation = _currentReservation;
+        _cancelReservationButton.Text = _currentReservation?.IsCheckedIn == true ? "退座" : "取消今日预约";
         _reservationText.Text = BuildReservationSummary(_reservationRecords);
     }
 
@@ -756,11 +758,6 @@ public sealed class MainActivity : Activity
         }
 
         var reservation = _currentReservation ?? throw new InvalidOperationException("当前没有可取消的今日预约。");
-        if (reservation.IsCheckedIn)
-        {
-            throw new InvalidOperationException("已签到预约不能在这里取消。");
-        }
-
         if (IsTaskActive(_occupySeatCoordinator.GetStatus()))
         {
             await _occupySeatCoordinator.StopAsync();

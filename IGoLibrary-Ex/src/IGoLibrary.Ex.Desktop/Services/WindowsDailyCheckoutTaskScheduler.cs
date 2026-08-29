@@ -7,9 +7,9 @@ namespace IGoLibrary.Ex.Desktop.Services;
 public sealed class WindowsDailyCheckoutTaskScheduler : IDailyCheckoutTaskScheduler
 {
     internal const string TaskName = "IGoLibrary Daily Checkout";
-    internal static readonly TimeSpan CheckoutTime = new(21, 30, 0);
+    internal static readonly TimeSpan DefaultCheckoutTime = new(21, 30, 0);
 
-    public async Task ConfigureAsync(bool enabled, CancellationToken cancellationToken = default)
+    public async Task ConfigureAsync(bool enabled, TimeSpan checkoutTime, CancellationToken cancellationToken = default)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -27,6 +27,11 @@ public sealed class WindowsDailyCheckoutTaskScheduler : IDailyCheckoutTaskSchedu
             return;
         }
 
+        if (checkoutTime < TimeSpan.Zero || checkoutTime >= TimeSpan.FromDays(1))
+        {
+            throw new ArgumentOutOfRangeException(nameof(checkoutTime), "退座时间必须在 00:00 到 23:59 之间。");
+        }
+
         var executablePath = Environment.ProcessPath;
         if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
         {
@@ -39,11 +44,11 @@ public sealed class WindowsDailyCheckoutTaskScheduler : IDailyCheckoutTaskSchedu
             throw new InvalidOperationException("无法识别当前 Windows 用户，未能创建每日退座任务。");
         }
 
-        var taskXml = BuildTaskXml(executablePath, userSid, DateTime.Now);
+        var taskXml = BuildTaskXml(executablePath, userSid, DateTime.Now, checkoutTime);
         var temporaryPath = Path.Combine(Path.GetTempPath(), $"IGoLibrary-DailyCheckout-{Guid.NewGuid():N}.xml");
         try
         {
-            await File.WriteAllTextAsync(temporaryPath, taskXml, System.Text.Encoding.UTF8, cancellationToken);
+            await File.WriteAllTextAsync(temporaryPath, taskXml, System.Text.Encoding.Unicode, cancellationToken);
             var result = await RunSchtasksAsync(
                 ["/Create", "/TN", TaskName, "/XML", temporaryPath, "/F"],
                 cancellationToken);
@@ -64,21 +69,21 @@ public sealed class WindowsDailyCheckoutTaskScheduler : IDailyCheckoutTaskSchedu
         }
     }
 
-    internal static string BuildTaskXml(string executablePath, string userSid, DateTime now)
+    internal static string BuildTaskXml(string executablePath, string userSid, DateTime now, TimeSpan? checkoutTime = null)
     {
         XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
-        var startDate = now.Date.Add(CheckoutTime);
+        var startDate = now.Date.Add(checkoutTime ?? DefaultCheckoutTime);
         if (startDate <= now)
         {
             startDate = startDate.AddDays(1);
         }
 
         var document = new XDocument(
-            new XDeclaration("1.0", "UTF-8", null),
+            new XDeclaration("1.0", "UTF-16", null),
             new XElement(ns + "Task",
                 new XAttribute("version", "1.4"),
                 new XElement(ns + "RegistrationInfo",
-                    new XElement(ns + "Description", "IGoLibrary 每天 21:30 自动恢复会话并退出学习中的座位。")),
+                    new XElement(ns + "Description", $"IGoLibrary 每天 {startDate:HH\\:mm} 自动恢复会话并退出学习中的座位。")),
                 new XElement(ns + "Triggers",
                     new XElement(ns + "CalendarTrigger",
                         new XElement(ns + "StartBoundary", startDate.ToString("yyyy-MM-dd'T'HH:mm:ss")),

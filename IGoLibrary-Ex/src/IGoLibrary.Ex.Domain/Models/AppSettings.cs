@@ -17,7 +17,8 @@ public sealed record AppSettings(
     int SuccessfulReservationCount = 0,
     long TotalGuardSeconds = 0,
     string? CachedUserNickname = null,
-    bool DailyCheckoutEnabled = false)
+    bool DailyCheckoutEnabled = false,
+    string DailyCheckoutTime = "21:30")
 {
     public static AppSettings Default { get; } = new(
         NotificationsEnabled: true,
@@ -34,5 +35,6 @@ public sealed record AppSettings(
         SuccessfulReservationCount: 0,
         TotalGuardSeconds: 0,
         CachedUserNickname: null,
-        DailyCheckoutEnabled: false);
+        DailyCheckoutEnabled: false,
+        DailyCheckoutTime: "21:30");
 }

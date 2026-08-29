@@ -48,7 +48,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task SaveSettingsAsync_ConfiguresDailyCheckoutTask_WhenEnabled()
+    public async Task DailyCheckoutToggle_ConfiguresTaskImmediately_WhenEnabled()
     {
         var settingsService = new FakeSettingsService(AppSettings.Default);
         var scheduler = new FakeDailyCheckoutTaskScheduler();
@@ -57,7 +57,7 @@ public sealed class MainWindowViewModelTests
             dailyCheckoutTaskScheduler: scheduler);
         viewModel.DailyCheckoutEnabled = true;
 
-        await viewModel.SaveSettingsCommand.ExecuteAsync(null);
+        await viewModel.DailyCheckoutConfigurationTask;
 
         Assert.True(scheduler.LastEnabled);
         Assert.True(settingsService.CurrentSettings.DailyCheckoutEnabled);
@@ -65,7 +65,44 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task SaveSettingsAsync_DoesNotPersistDailyCheckout_WhenTaskCreationFails()
+    public async Task DailyCheckoutToggle_UsesAndPersistsConfiguredTime()
+    {
+        var settingsService = new FakeSettingsService(AppSettings.Default);
+        var scheduler = new FakeDailyCheckoutTaskScheduler();
+        var viewModel = CreateViewModel(
+            settingsService: settingsService,
+            dailyCheckoutTaskScheduler: scheduler);
+        viewModel.DailyCheckoutTime = "08:15";
+        viewModel.DailyCheckoutEnabled = true;
+
+        await viewModel.DailyCheckoutConfigurationTask;
+
+        Assert.Equal(new TimeSpan(8, 15, 0), scheduler.LastCheckoutTime);
+        Assert.Equal("08:15", settingsService.CurrentSettings.DailyCheckoutTime);
+        Assert.Contains("08:15", viewModel.DailyCheckoutStatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DailyCheckoutToggle_RejectsInvalidConfiguredTime()
+    {
+        var settingsService = new FakeSettingsService(AppSettings.Default);
+        var scheduler = new FakeDailyCheckoutTaskScheduler();
+        var viewModel = CreateViewModel(
+            settingsService: settingsService,
+            dailyCheckoutTaskScheduler: scheduler);
+        viewModel.DailyCheckoutTime = "25:99";
+        viewModel.DailyCheckoutEnabled = true;
+
+        await viewModel.DailyCheckoutConfigurationTask;
+
+        Assert.False(viewModel.DailyCheckoutEnabled);
+        Assert.False(settingsService.CurrentSettings.DailyCheckoutEnabled);
+        Assert.Null(scheduler.LastCheckoutTime);
+        Assert.Contains("退座时间格式不正确", viewModel.DailyCheckoutStatusText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DailyCheckoutToggle_DoesNotPersistSetting_WhenTaskCreationFails()
     {
         var settingsService = new FakeSettingsService(AppSettings.Default);
         var scheduler = new FakeDailyCheckoutTaskScheduler
@@ -77,7 +114,7 @@ public sealed class MainWindowViewModelTests
             dailyCheckoutTaskScheduler: scheduler);
         viewModel.DailyCheckoutEnabled = true;
 
-        await viewModel.SaveSettingsCommand.ExecuteAsync(null);
+        await viewModel.DailyCheckoutConfigurationTask;
 
         Assert.False(viewModel.DailyCheckoutEnabled);
         Assert.False(settingsService.CurrentSettings.DailyCheckoutEnabled);
@@ -133,7 +170,7 @@ public sealed class MainWindowViewModelTests
 
         var titles = viewModel.SidebarItems.Select(item => item.Title).ToArray();
 
-        Assert.Equal(["首页", "账户与场馆", "抢座", "占座", "通知设置", "系统设置", "使用指南"], titles);
+        Assert.Equal(["首页", "账户与场馆", "抢座", "占座", "退座", "通知设置", "系统设置", "使用指南"], titles);
     }
 
     [Fact]
@@ -1041,15 +1078,16 @@ public sealed class MainWindowViewModelTests
         Assert.Equal("状态", record.RemainingLabelText);
         Assert.Equal("学习中", record.RemainingText);
         Assert.Equal("学习中", record.BadgeText);
-        Assert.False(record.CanCancel);
-        Assert.False(viewModel.CanCancelCurrentReservation);
+        Assert.True(record.CanCancel);
+        Assert.True(viewModel.CanCancelCurrentReservation);
 
         await viewModel.CancelReservationRecordCommand.ExecuteAsync(record);
-        await viewModel.CancelCurrentReservationCommand.ExecuteAsync(null);
 
-        Assert.Equal(0, cancelCalls);
-        Assert.Empty(confirmationDialogService.Requests);
-        Assert.Contains(notifications.Warnings, warning => warning.Message.Contains("学习中"));
+        Assert.Equal(1, cancelCalls);
+        var request = Assert.Single(confirmationDialogService.Requests);
+        Assert.Equal("确认退座", request.Title);
+        Assert.Equal("退座", request.ConfirmText);
+        Assert.Contains(notifications.Successes, success => success.Title == "已退座");
     }
 
     [Fact]

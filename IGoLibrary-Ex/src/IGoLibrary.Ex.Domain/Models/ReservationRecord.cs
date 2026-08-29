@@ -16,7 +16,7 @@ public sealed record ReservationRecord(
 {
     public bool CanCancel => Kind switch
     {
-        ReservationRecordKind.Today => !IsCheckedIn && !string.IsNullOrWhiteSpace(ReservationToken),
+        ReservationRecordKind.Today => !string.IsNullOrWhiteSpace(ReservationToken),
         ReservationRecordKind.Tomorrow => !IsUsed,
         _ => false
     };

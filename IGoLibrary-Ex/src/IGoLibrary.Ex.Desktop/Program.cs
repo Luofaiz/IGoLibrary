@@ -1,5 +1,6 @@
 using Avalonia;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using IGoLibrary.Ex.Application.Abstractions;
 using IGoLibrary.Ex.Infrastructure.Logging;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +12,11 @@ namespace IGoLibrary.Ex.Desktop;
 internal static class Program
 {
     private const string ScheduledCheckoutArgument = "--scheduled-checkout";
+    private const uint MessageBoxOk = 0x00000000;
+    private const uint MessageBoxIconInformation = 0x00000040;
+    private const uint MessageBoxIconWarning = 0x00000030;
+    private const uint MessageBoxTopMost = 0x00040000;
+    private const uint MessageBoxSetForeground = 0x00010000;
     private static bool _globalExceptionLoggingRegistered;
     private static int _skipNextUnhandledExceptionLog;
     public static IHost? Host { get; private set; }
@@ -95,6 +101,10 @@ internal static class Program
         if (result.Succeeded)
         {
             logWriter.Write(LogLevel.Information, "DailyCheckout", result.Message);
+            ShowScheduledCheckoutNotification(
+                "每日自动退座完成",
+                result.Message,
+                MessageBoxIconInformation);
             Environment.ExitCode = 0;
             return;
         }
@@ -119,8 +129,40 @@ internal static class Program
             logWriter.Write(LogLevel.Warning, "DailyCheckout", $"发送自动退座失败邮件时出错：{ex.Message}", ex);
         }
 
+        ShowScheduledCheckoutNotification(
+            "每日自动退座失败",
+            result.Message,
+            MessageBoxIconWarning);
         Environment.ExitCode = 2;
     }
+
+    private static void ShowScheduledCheckoutNotification(string title, string message, uint icon)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        try
+        {
+            MessageBoxW(
+                IntPtr.Zero,
+                message,
+                title,
+                MessageBoxOk | icon | MessageBoxTopMost | MessageBoxSetForeground);
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine($"显示自动退座结果弹窗失败：{ex.Message}");
+        }
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int MessageBoxW(
+        IntPtr hWnd,
+        string text,
+        string caption,
+        uint type);
 
     private static void RegisterGlobalExceptionLogging(IAppLogWriter logWriter)
     {

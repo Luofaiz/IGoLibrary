@@ -26,4 +26,19 @@ public sealed class WindowsDailyCheckoutTaskSchedulerTests
         Assert.Equal(executablePath, document.Descendants(ns + "Command").Single().Value);
         Assert.Equal("--scheduled-checkout", document.Descendants(ns + "Arguments").Single().Value);
     }
+
+    [Fact]
+    public void BuildTaskXml_UsesConfiguredCheckoutTime()
+    {
+        var xml = WindowsDailyCheckoutTaskScheduler.BuildTaskXml(
+            @"C:\IGoLibrary\IGoLibrary.exe",
+            "S-1-5-21-1-2-3-1001",
+            new DateTime(2026, 8, 29, 7, 0, 0),
+            new TimeSpan(8, 15, 0));
+        var document = XDocument.Parse(xml);
+        XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";
+
+        Assert.Equal("2026-08-29T08:15:00", document.Descendants(ns + "StartBoundary").Single().Value);
+        Assert.Contains("每天 08:15", document.Descendants(ns + "Description").Single().Value, StringComparison.Ordinal);
+    }
 }

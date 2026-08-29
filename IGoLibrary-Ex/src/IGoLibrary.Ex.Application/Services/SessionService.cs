@@ -111,17 +111,31 @@ public sealed class SessionService(
 
     private async Task ValidateCookieForSessionAsync(string cookie, CancellationToken cancellationToken)
     {
-        if (CookieExpiryDetector.TryGetExpirationTime(cookie, out var expirationTime))
+        var wasExpired = CookieExpiryDetector.TryGetExpirationTime(cookie, out var expirationTime) &&
+                         expirationTime <= DateTimeOffset.Now;
+        if (wasExpired)
         {
-            if (expirationTime <= DateTimeOffset.Now)
-            {
-                throw new InvalidOperationException(CookieExpiryDetector.BuildExpiredMessage(expirationTime));
-            }
-
+            activityLogService.Write(LogEntryKind.Info, "Auth", "本地 Cookie 已达到 JWT 到期时间，正在尝试通过服务端会话刷新身份 Cookie。");
+        }
+        else if (CookieExpiryDetector.TryGetExpirationTime(cookie, out expirationTime))
+        {
             activityLogService.Write(LogEntryKind.Info, "Auth", $"Cookie JWT 未过期，到期时间：{expirationTime:yyyy-MM-dd HH:mm:ss}。");
         }
 
         await apiClient.ValidateCookieAsync(cookie, cancellationToken);
+
+        if (wasExpired)
+        {
+            var refreshedCookie = runtimeState.Session?.Cookie;
+            if (string.Equals(refreshedCookie, cookie, StringComparison.Ordinal) ||
+                (CookieExpiryDetector.TryGetExpirationTime(refreshedCookie, out var refreshedExpiration) &&
+                 refreshedExpiration <= DateTimeOffset.Now))
+            {
+                throw new InvalidOperationException(CookieExpiryDetector.BuildExpiredMessage(expirationTime));
+            }
+
+            activityLogService.Write(LogEntryKind.Success, "Auth", "服务端已接受过期 Cookie 并返回可继续使用的会话 Cookie。");
+        }
     }
 
     private async Task ClearStoredSessionSafelyAsync(string message, CancellationToken cancellationToken)

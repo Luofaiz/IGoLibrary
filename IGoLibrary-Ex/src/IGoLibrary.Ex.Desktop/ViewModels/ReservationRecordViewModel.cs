@@ -23,6 +23,8 @@ public sealed partial class ReservationRecordViewModel(
 
     public string KindText => Record.Kind == ReservationRecordKind.Today ? "今日预约" : "明日预约";
 
+    public string CancelActionText => Record.IsCheckedIn ? "退座" : "取消预约";
+
     public string TimeLabelText => Record.Kind == ReservationRecordKind.Today ? "当前有效至" : "预约日期";
 
     public string TimeValueText => Record.Kind == ReservationRecordKind.Today

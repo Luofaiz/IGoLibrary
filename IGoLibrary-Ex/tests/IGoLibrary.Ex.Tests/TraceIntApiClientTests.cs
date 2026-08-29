@@ -649,7 +649,7 @@ public sealed class TraceIntApiClientTests
 
         var record = Assert.Single(records);
         Assert.True(record.IsCheckedIn);
-        Assert.False(record.CanCancel);
+        Assert.True(record.CanCancel);
     }
 
     [Fact]

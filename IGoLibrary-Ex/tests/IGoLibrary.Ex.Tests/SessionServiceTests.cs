@@ -96,7 +96,7 @@ public sealed class SessionServiceTests
     }
 
     [Fact]
-    public async Task RestoreAsync_ClearsStoredSession_WhenStoredJwtIsExpired_WithoutApiValidation()
+    public async Task RestoreAsync_ClearsStoredSession_WhenExpiredJwtCannotBeRefreshed()
     {
         var validateCalls = 0;
         var apiClient = new FakeTraceIntApiClient
@@ -123,7 +123,33 @@ public sealed class SessionServiceTests
         Assert.Null(restored);
         Assert.Null(runtimeState.Session);
         Assert.Equal(1, credentialStore.ClearCalls);
-        Assert.Equal(0, validateCalls);
+        Assert.Equal(1, validateCalls);
+    }
+
+    [Fact]
+    public async Task RestoreAsync_AcceptsExpiredJwt_WhenServerReturnsRefreshedCookie()
+    {
+        var runtimeState = new AppRuntimeState();
+        var expiredCookie = BuildAuthorizationCookie(DateTimeOffset.Now.AddSeconds(-1));
+        var refreshedCookie = BuildAuthorizationCookie(DateTimeOffset.Now.AddHours(2));
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnValidateCookieAsync = (_, _) =>
+            {
+                runtimeState.Session = runtimeState.Session! with { Cookie = refreshedCookie };
+                return Task.CompletedTask;
+            }
+        };
+        var credentialStore = new FakeCredentialStore
+        {
+            StoredSession = new SessionCredentials(expiredCookie, SessionSource.ManualCookie, DateTimeOffset.Now.AddHours(-2), true)
+        };
+        var service = new SessionService(apiClient, credentialStore, new ActivityLogService(), runtimeState);
+
+        var restored = await service.RestoreAsync();
+
+        Assert.NotNull(restored);
+        Assert.Equal(refreshedCookie, restored.Cookie);
     }
 
     [Fact]
