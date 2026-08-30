@@ -19,7 +19,20 @@ public sealed partial class ReservationRecordViewModel(
 
     public string SeatNameText => string.IsNullOrWhiteSpace(Record.SeatName) ? "未知座位" : Record.SeatName;
 
-    public string VenueText => string.IsNullOrWhiteSpace(Record.LibraryName) ? "未知场馆" : Record.LibraryName;
+    public string VenueText
+    {
+        get
+        {
+            var venue = string.IsNullOrWhiteSpace(Record.LibraryName) ? "未知场馆" : Record.LibraryName;
+            if (string.IsNullOrWhiteSpace(Record.LibraryFloor))
+            {
+                return venue;
+            }
+
+            var floor = Record.LibraryFloor.TrimEnd('楼');
+            return $"{venue}（{floor}楼）";
+        }
+    }
 
     public string KindText => Record.Kind == ReservationRecordKind.Today ? "今日预约" : "明日预约";
 
@@ -30,6 +43,8 @@ public sealed partial class ReservationRecordViewModel(
     public string TimeValueText => Record.Kind == ReservationRecordKind.Today
         ? Record.ExpirationTime?.ToString("HH:mm:ss") ?? "--:--:--"
         : Record.ReservationDate?.ToString("yyyy-MM-dd") ?? "明日";
+
+    public bool ShowTimeRow => !Record.IsCheckedIn;
 
     public string RemainingLabelText => Record.IsCheckedIn || Record.Kind == ReservationRecordKind.Tomorrow ? "状态" : "剩余时间";
 
@@ -44,7 +59,7 @@ public sealed partial class ReservationRecordViewModel(
 
             if (Record.IsCheckedIn)
             {
-                return "学习中";
+                return FormatStudyElapsed(Record.StudyElapsedSeconds);
             }
 
             if (Record.ExpirationTime is null)
@@ -141,5 +156,15 @@ public sealed partial class ReservationRecordViewModel(
         }
 
         return $"{Math.Max(0, remaining.Seconds)} 秒";
+    }
+
+    private static string FormatStudyElapsed(int seconds)
+    {
+        var elapsed = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return elapsed.TotalHours >= 1
+            ? $"已学习 {elapsed.TotalHours.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} 小时"
+            : elapsed.TotalMinutes >= 1
+                ? $"已学习 {Math.Max(1, elapsed.Minutes)} 分钟"
+                : $"已学习 {Math.Max(0, elapsed.Seconds)} 秒";
     }
 }

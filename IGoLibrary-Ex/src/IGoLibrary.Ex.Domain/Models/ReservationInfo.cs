@@ -8,4 +8,5 @@ public sealed record ReservationInfo(
     string SeatName,
     DateTimeOffset ExpirationTime,
     bool IsCheckedIn = false,
-    int StudyElapsedSeconds = 0);
+    int StudyElapsedSeconds = 0,
+    string LibraryFloor = "");

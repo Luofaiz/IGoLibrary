@@ -368,7 +368,8 @@ public sealed class TraceIntApiClient(
             today.SeatName,
             today.ExpirationTime.Value,
             today.IsCheckedIn,
-            today.StudyElapsedSeconds);
+            today.StudyElapsedSeconds,
+            today.LibraryFloor);
     }
 
     public async Task<IReadOnlyList<ReservationRecord>> GetReservationRecordsAsync(string cookie, CancellationToken cancellationToken = default)
@@ -649,7 +650,8 @@ public sealed class TraceIntApiClient(
             expirationTime,
             ResolveTodayReservationDate(reservation, expirationTime),
             IsCheckedIn: IsTodayReservationCheckedIn(reservation),
-            StudyElapsedSeconds: ReadOptionalIntProperty(reservation, "diff"));
+            StudyElapsedSeconds: ReadOptionalIntProperty(reservation, "diff"),
+            LibraryFloor: ReadOptionalStringProperty(reservation, "lib_floor"));
         return true;
     }
 
@@ -678,12 +680,20 @@ public sealed class TraceIntApiClient(
             seatName,
             null,
             ResolvePrereserveDate(item),
-            ReadOptionalBooleanProperty(item, "is_used"));
+            ReadOptionalBooleanProperty(item, "is_used"),
+            LibraryFloor: ReadOptionalStringProperty(item, "lib_floor"));
         return true;
     }
 
     private static bool IsTodayReservationCheckedIn(JsonElement reservation)
     {
+        if (reservation.TryGetProperty("status", out var status) &&
+            ((status.ValueKind == JsonValueKind.Number && status.TryGetInt32(out var statusNumber) && statusNumber == 3) ||
+             (status.ValueKind == JsonValueKind.String && status.GetString() == "3")))
+        {
+            return true;
+        }
+
         if (ReadOptionalUnixTimestampProperty(reservation, "validate_date") is not null)
         {
             return true;

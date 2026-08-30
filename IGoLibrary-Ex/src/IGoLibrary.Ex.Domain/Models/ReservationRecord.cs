@@ -13,7 +13,8 @@ public sealed record ReservationRecord(
     DateOnly? ReservationDate,
     bool IsUsed = false,
     bool IsCheckedIn = false,
-    int StudyElapsedSeconds = 0)
+    int StudyElapsedSeconds = 0,
+    string LibraryFloor = "")
 {
     public bool CanCancel => Kind switch
     {
