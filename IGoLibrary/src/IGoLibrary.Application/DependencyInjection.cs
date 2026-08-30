@@ -1,0 +1,23 @@
+using IGoLibrary.Application.Abstractions;
+using IGoLibrary.Application.Services;
+using IGoLibrary.Application.State;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace IGoLibrary.Application;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddApplication(this IServiceCollection services)
+    {
+        services.AddSingleton<AppRuntimeState>();
+        services.AddSingleton<IActivityLogService, ActivityLogService>();
+        services.AddSingleton<ISessionService, SessionService>();
+        services.AddSingleton<ILibraryService, LibraryService>();
+        services.AddSingleton<ISettingsService, SettingsService>();
+        services.AddSingleton<IGrabSeatCoordinator, GrabSeatCoordinator>();
+        services.AddSingleton<ITomorrowReservationCoordinator, TomorrowReservationCoordinator>();
+        services.AddSingleton<IOccupySeatCoordinator, OccupySeatCoordinator>();
+        services.AddSingleton<IDailyCheckoutService, DailyCheckoutService>();
+        return services;
+    }
+}

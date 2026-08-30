@@ -366,8 +366,8 @@ FodyWeavers.xsd
 # Local Codex/.NET workspace caches
 /.dotnet-cli/
 /.home/
-/IGoLibrary-Ex/.dotnet-cli/
-/IGoLibrary-Ex/.home/
+/IGoLibrary/.dotnet-cli/
+/IGoLibrary/.home/
 /.tools/
 *.zip
 /ConsoleDemo/
@@ -382,4 +382,4 @@ FodyWeavers.xsd
 /I_Goto_Library-main.zip
 /抢座助手win.zip
 *.exe
-!IGoLibrary-Ex/build/*.exe
+!IGoLibrary/build/*.exe

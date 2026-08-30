@@ -1,6 +1,6 @@
 # IGoLibrary
 
-IGoLibrary 是一个围绕“我去图书馆”预约流程重建的桌面客户端。当前仓库主线是 `IGoLibrary-Ex`，使用 Avalonia 重构桌面界面，并加入本地数据持久化、凭据存储、程序内更新检查和 Windows 安装包发布流程。
+IGoLibrary 是一个围绕“我去图书馆”预约流程重建的桌面客户端。当前仓库主线是 `IGoLibrary`，使用 Avalonia 重构桌面界面，并加入本地数据持久化、凭据存储、程序内更新检查和 Windows 安装包发布流程。
 
 本项目仅用于学习、研究和个人自动化实验，不隶属于“我去图书馆”平台、学校或图书馆运营方。请在遵守所在学校、场馆和平台规则的前提下了解与使用。
 
@@ -51,7 +51,7 @@ IGoLibrary-Windows-x64.zip
 APK 生成位置：
 
 ```text
-IGoLibrary-Ex/artifacts/android/IGoLibrary-Android.apk
+IGoLibrary/artifacts/android/IGoLibrary-Android.apk
 ```
 
 Android 手机安装时需要开启“允许安装未知来源应用”。当前 APK 用于本地测试和侧载安装，暂未接入应用商店发布和正式签名证书。移动端已复用桌面端的抢座、明日预约和占座协调器，但 Android 系统可能限制长时间后台运行；执行任务时建议保持 App 在前台并避免系统省电策略杀掉进程。
@@ -61,7 +61,7 @@ Android 手机安装时需要开启“允许安装未知来源应用”。当前
 如果手机已开启 USB 调试并连接到电脑，也可以直接安装：
 
 ```powershell
-cd .\IGoLibrary-Ex
+cd .\IGoLibrary
 .\build\install-android.ps1
 ```
 
@@ -88,31 +88,31 @@ https://github.com/Luofaiz/IGoLibrary/releases/latest/download/latest.json
 Windows 默认目录：
 
 ```text
-%LOCALAPPDATA%\IGoLibrary-Ex
+%LOCALAPPDATA%\IGoLibrary
 ```
 
 macOS 默认目录：
 
 ```text
-~/Library/Application Support/IGoLibrary-Ex
+~/Library/Application Support/IGoLibrary
 ```
 
 主要数据库文件是 `igolibrary-ex.db`，日志位于数据目录下的 `logs` 文件夹。可以通过环境变量 `IGOLIBRARY_EX_DATA_DIR` 覆盖默认数据目录。卸载或安装新版本不会主动删除这些本地数据。
 
 ## 开发和构建
 
-主要项目位于 `IGoLibrary-Ex`：
+主要项目位于 `IGoLibrary`：
 
 ```text
-IGoLibrary-Ex/
+IGoLibrary/
   src/
-    IGoLibrary.Ex.Domain/
-    IGoLibrary.Ex.Application/
-    IGoLibrary.Ex.Infrastructure/
-    IGoLibrary.Ex.Desktop/
-    IGoLibrary.Ex.Android/
+    IGoLibrary.Domain/
+    IGoLibrary.Application/
+    IGoLibrary.Infrastructure/
+    IGoLibrary.Desktop/
+    IGoLibrary.Android/
   tests/
-    IGoLibrary.Ex.Tests/
+    IGoLibrary.Tests/
   build/
 ```
 
@@ -125,49 +125,40 @@ IGoLibrary-Ex/
 本地运行：
 
 ```powershell
-cd .\IGoLibrary-Ex
+cd .\IGoLibrary
 dotnet restore
-dotnet run --project .\src\IGoLibrary.Ex.Desktop\IGoLibrary.Ex.Desktop.csproj
+dotnet run --project .\src\IGoLibrary.Desktop\IGoLibrary.Desktop.csproj
 ```
 
 运行测试：
 
 ```powershell
-cd .\IGoLibrary-Ex
-dotnet test .\IGoLibrary-Ex.sln -c Release -p:UsedAvaloniaProducts=
+cd .\IGoLibrary
+dotnet test .\IGoLibrary.sln -c Release -p:UsedAvaloniaProducts=
 ```
 
 构建 Windows 安装包和更新清单：
 
 ```powershell
-cd .\IGoLibrary-Ex
+cd .\IGoLibrary
 .\build\publish-installer.ps1 -Version "1.0.0" -Notes "Initial release."
 ```
 
 构建 Android APK：
 
 ```powershell
-cd .\IGoLibrary-Ex
+cd .\IGoLibrary
 .\build\publish-android.ps1
 ```
 
 上传或覆盖 GitHub Release 资产：
 
 ```powershell
-cd .\IGoLibrary-Ex
+cd .\IGoLibrary
 .\build\publish-github-release.ps1 -Version "1.0.0" -Repo "Luofaiz/IGoLibrary" -Notes "Initial release."
 ```
 
-生成产物会写入 `IGoLibrary-Ex/artifacts/`，该目录已被 Git 忽略。
-
-## 历史版本
-
-仓库中保留了旧 WinForms 版本源码和文档，主要用于历史参考：
-
-- `IGoLibrary-Winform/`
-- [README_Winform.md](README_Winform.md)
-
-当前 README 只描述 `IGoLibrary-Ex` 主线，不再沿用旧 WinForms 版本的操作说明。
+生成产物会写入 `IGoLibrary/artifacts/`，该目录已被 Git 忽略。
 
 ## 安全注意
 
