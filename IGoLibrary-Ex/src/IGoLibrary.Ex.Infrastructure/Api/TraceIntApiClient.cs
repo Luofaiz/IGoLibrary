@@ -368,7 +368,8 @@ public sealed class TraceIntApiClient(
             today.SeatName,
             today.ExpirationTime.Value,
             today.IsCheckedIn,
-            today.StudyElapsedSeconds);
+            today.StudyElapsedSeconds,
+            today.LibraryFloor);
     }
 
     public async Task<IReadOnlyList<ReservationRecord>> GetReservationRecordsAsync(string cookie, CancellationToken cancellationToken = default)
@@ -649,7 +650,8 @@ public sealed class TraceIntApiClient(
             expirationTime,
             ResolveTodayReservationDate(reservation, expirationTime),
             IsCheckedIn: IsTodayReservationCheckedIn(reservation),
-            StudyElapsedSeconds: ReadOptionalIntProperty(reservation, "diff"));
+            StudyElapsedSeconds: ReadOptionalIntProperty(reservation, "diff"),
+            LibraryFloor: ReadOptionalStringProperty(reservation, "lib_floor"));
         return true;
     }
 
@@ -678,7 +680,8 @@ public sealed class TraceIntApiClient(
             seatName,
             null,
             ResolvePrereserveDate(item),
-            ReadOptionalBooleanProperty(item, "is_used"));
+            ReadOptionalBooleanProperty(item, "is_used"),
+            LibraryFloor: ReadOptionalStringProperty(item, "lib_floor"));
         return true;
     }
 

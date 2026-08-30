@@ -3096,7 +3096,9 @@ public partial class MainWindowViewModel(
 
         var remaining = _currentReservation.ExpirationTime - now;
         HomeReservationSeatNumberText = ExtractSeatNumberText(_currentReservation.SeatName);
-        HomeReservationVenueText = _currentReservation.LibraryName;
+        HomeReservationVenueText = string.IsNullOrWhiteSpace(_currentReservation.LibraryFloor)
+            ? _currentReservation.LibraryName
+            : $"{_currentReservation.LibraryName}（{_currentReservation.LibraryFloor.TrimEnd('楼')}楼）";
         HomeReservationExpirationTimeText = _currentReservation.ExpirationTime.ToString("HH:mm:ss", DashboardCulture);
 
         if (remaining <= TimeSpan.Zero)

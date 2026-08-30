@@ -19,7 +19,20 @@ public sealed partial class ReservationRecordViewModel(
 
     public string SeatNameText => string.IsNullOrWhiteSpace(Record.SeatName) ? "未知座位" : Record.SeatName;
 
-    public string VenueText => string.IsNullOrWhiteSpace(Record.LibraryName) ? "未知场馆" : Record.LibraryName;
+    public string VenueText
+    {
+        get
+        {
+            var venue = string.IsNullOrWhiteSpace(Record.LibraryName) ? "未知场馆" : Record.LibraryName;
+            if (string.IsNullOrWhiteSpace(Record.LibraryFloor))
+            {
+                return venue;
+            }
+
+            var floor = Record.LibraryFloor.TrimEnd('楼');
+            return $"{venue}（{floor}楼）";
+        }
+    }
 
     public string KindText => Record.Kind == ReservationRecordKind.Today ? "今日预约" : "明日预约";
 
