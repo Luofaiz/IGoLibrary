@@ -1912,6 +1912,8 @@
                       <TextBlock Classes="guide-body"
                                  Text="Cookie 有有效期。左侧会显示到期时间；失效后需要重新授权。切换账号时，先在账户页注销，再用新账号授权。" />
                     </Border>
+                    <TextBlock Classes="guide-body"
+                               Text="电脑版微信授权后复制页面地址，程序会自动读取剪贴板；手机扫码授权后，将授权链接粘贴到输入框并点击“从链接解析”。" />
                   </StackPanel>
                 </Border>
 
@@ -1929,6 +1931,8 @@
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource SemiWarningTextBrush}"
                                Text="取消到重新预约之间存在短暂窗口，原座可能被其他人抢走。开始前请确认风险，并避免同时在微信端手动操作同一预约。" />
+                    <TextBlock Classes="guide-body"
+                               Text="刷新策略和重约间隔会影响轮询频率。频率越高越容易触发公众号限制，出现连续错误时请停止任务并稍后重试。" />
                   </StackPanel>
                 </Border>
 
@@ -1949,6 +1953,23 @@
                       <TextBlock Classes="guide-body"
                                  Text="需提前授权并保存登录状态。程序无需保持打开，锁屏不影响执行；睡眠或待机时系统会尝试唤醒。电脑关机、Windows 用户已注销、网络不可用或登录会话彻底过期时，无法保证自动退座成功。" />
                     </Border>
+                    <TextBlock Classes="guide-body"
+                               Text="程序启动后会检查 Windows 任务计划的真实状态，只有任务存在时才显示为已启用。" />
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="semi-card Shadow">
+                  <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <PathIcon Data="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 5h-2v5H7v2h6z"
+                                Width="22" Height="22"
+                                Foreground="{DynamicResource SemiAccentBrush}" />
+                      <TextBlock Classes="guide-card-title" Text="积分签到" />
+                    </StackPanel>
+                    <TextBlock Classes="guide-body"
+                               Text="设置中的“登录后自动积分签到”开启后，登录或恢复会话时会先尝试签到，再检查今日状态；账户页的“积分签到”按钮可作为手动备用操作。" />
+                    <TextBlock Classes="guide-body"
+                               Text="状态文字会显示今日是否已完成签到。签到需要有效授权，并受公众号每日规则限制；Cookie 过期时请重新完成微信授权。" />
                   </StackPanel>
                 </Border>
               </StackPanel>
@@ -1974,6 +1995,23 @@
                     </Border>
                     <TextBlock Classes="guide-body"
                                Text="“先获取列表判断状态”会先检查座位是否可用；“直接发送预约请求”更直接，但请求更密集。日志出现频率限制或连续错误时，应停止任务并稍后重试。" />
+                    <TextBlock Classes="guide-body"
+                               Text="座位选择器支持按座位号过滤、隐藏被占座位、刷新座位布局和收藏座位；收藏不会自动预约，仍需在任务配置中确认目标。" />
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="semi-card Shadow">
+                  <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                      <PathIcon Data="M4 4h16v16H4zM7 7h10v2H7zm0 4h10v2H7zm0 4h6v2H7z"
+                                Width="22" Height="22"
+                                Foreground="{DynamicResource SemiAccentBrush}" />
+                      <TextBlock Classes="guide-card-title" Text="首页与预约记录" />
+                    </StackPanel>
+                    <TextBlock Classes="guide-body"
+                               Text="首页会显示当前预约、场馆、座位、预约状态、学习时间和个人信息（学习时间、排名、单日最长、积分）。点击“刷新预约记录”可重新读取公众号数据。" />
+                    <TextBlock Classes="guide-body"
+                               Text="预约阶段显示“当前有效至”；已经签到并学习中时显示学习状态，不再显示预约有效期。场馆名称会附带接口返回的楼层，例如“电子阅览室（3楼）”。" />
                   </StackPanel>
                 </Border>
 
@@ -1989,6 +2027,8 @@
                                Text="通知设置支持本地弹窗、提示音和 SMTP 邮件提醒。系统设置可调整超时、重试、主题和接口高级配置；不了解 GraphQL 协议时不要修改高级模板。" />
                     <TextBlock Classes="guide-body"
                                Text="任务运行期间保持电脑联网，避免休眠、退出程序或重复启动多个实例。右上角关闭按钮在任务运行时通常会最小化到托盘；真正退出会停止所有监控任务。" />
+                    <TextBlock Classes="guide-body"
+                               Text="“登录后自动积分签到”在设置中开启；账户页保留手动签到按钮作为备用。修改自定义接口前请备份默认模板，出现接口错误时可恢复默认。" />
                   </StackPanel>
                 </Border>
               </StackPanel>
