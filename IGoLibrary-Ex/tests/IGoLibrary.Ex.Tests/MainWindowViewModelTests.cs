@@ -1056,7 +1056,8 @@ public sealed class MainWindowViewModelTests
                     "4",
                     DateTimeOffset.Now.AddMinutes(30),
                     DateOnly.FromDateTime(DateTime.Now),
-                    IsCheckedIn: true)
+                    IsCheckedIn: true,
+                    StudyElapsedSeconds: 5400)
             ]),
             OnCancelReservationAsync = (_, _, _) =>
             {
@@ -1076,7 +1077,7 @@ public sealed class MainWindowViewModelTests
 
         var record = Assert.Single(viewModel.HomeReservationRecords);
         Assert.Equal("状态", record.RemainingLabelText);
-        Assert.Equal("学习中", record.RemainingText);
+        Assert.Equal("已学习 1 小时", record.RemainingText);
         Assert.Equal("学习中", record.BadgeText);
         Assert.True(record.CanCancel);
         Assert.True(viewModel.CanCancelCurrentReservation);
