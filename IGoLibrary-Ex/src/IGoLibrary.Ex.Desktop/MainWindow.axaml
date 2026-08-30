@@ -549,6 +549,7 @@
                                              Text="{Binding VenueText}" />
                                   <TextBlock FontSize="15"
                                              FontWeight="SemiBold"
+                                             IsVisible="{Binding ShowTimeRow}"
                                              Foreground="{DynamicResource SemiTextPrimaryBrush}">
                                     <Run Text="{Binding TimeLabelText}" />
                                     <Run Text="：" />

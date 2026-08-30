@@ -1077,7 +1077,8 @@ public sealed class MainWindowViewModelTests
 
         var record = Assert.Single(viewModel.HomeReservationRecords);
         Assert.Equal("状态", record.RemainingLabelText);
-        Assert.Equal("已学习 1 小时", record.RemainingText);
+        Assert.Equal("已学习 1.5 小时", record.RemainingText);
+        Assert.False(record.ShowTimeRow);
         Assert.Equal("学习中", record.BadgeText);
         Assert.True(record.CanCancel);
         Assert.True(viewModel.CanCancelCurrentReservation);

@@ -31,6 +31,8 @@ public sealed partial class ReservationRecordViewModel(
         ? Record.ExpirationTime?.ToString("HH:mm:ss") ?? "--:--:--"
         : Record.ReservationDate?.ToString("yyyy-MM-dd") ?? "明日";
 
+    public bool ShowTimeRow => !Record.IsCheckedIn;
+
     public string RemainingLabelText => Record.IsCheckedIn || Record.Kind == ReservationRecordKind.Tomorrow ? "状态" : "剩余时间";
 
     public string RemainingText
@@ -147,7 +149,7 @@ public sealed partial class ReservationRecordViewModel(
     {
         var elapsed = TimeSpan.FromSeconds(Math.Max(0, seconds));
         return elapsed.TotalHours >= 1
-            ? $"已学习 {(int)elapsed.TotalHours} 小时"
+            ? $"已学习 {elapsed.TotalHours.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)} 小时"
             : elapsed.TotalMinutes >= 1
                 ? $"已学习 {Math.Max(1, elapsed.Minutes)} 分钟"
                 : $"已学习 {Math.Max(0, elapsed.Seconds)} 秒";
