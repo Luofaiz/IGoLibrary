@@ -295,6 +295,18 @@ public partial class MainWindowViewModel(
     private string homeMemoryUsageText = "--";
 
     [ObservableProperty]
+    private string homeStudyTimeText = "--";
+
+    [ObservableProperty]
+    private string homeRankText = "--";
+
+    [ObservableProperty]
+    private string homeDayLongestText = "--";
+
+    [ObservableProperty]
+    private string homeCreditText = "--";
+
+    [ObservableProperty]
     private string homeReservationSeatNumberText = "--";
 
     [ObservableProperty]
@@ -503,6 +515,9 @@ public partial class MainWindowViewModel(
 
     [ObservableProperty]
     private bool dailyCheckoutEnabled;
+
+    [ObservableProperty]
+    private bool autoCreditSignInEnabled = true;
 
     [ObservableProperty]
     private bool creditSigningIn;
@@ -894,6 +909,8 @@ public partial class MainWindowViewModel(
                     UpdateSidebarCookieExpiry(restored.Cookie);
                     await NotifySessionRestoredAsync(restored.Cookie);
                     await RefreshHomeUserDisplayNameAsync(restored.Cookie);
+                    await RefreshHomeUserStatisticsAsync(restored.Cookie);
+                    await TriggerAutomaticCreditSignInAsync(restored.Cookie);
                     await LoadLibrariesAsync(restorePreferredSelection: true);
                     if (SelectedLibrary is not null)
                     {
@@ -1158,6 +1175,8 @@ public partial class MainWindowViewModel(
                 SessionSummary = $"登录成功：{session.Source} / {session.SavedAt:yyyy-MM-dd HH:mm:ss}";
                 UpdateSidebarCookieExpiry(session.Cookie);
                 await RefreshHomeUserDisplayNameAsync(session.Cookie);
+                await RefreshHomeUserStatisticsAsync(session.Cookie);
+                await TriggerAutomaticCreditSignInAsync(session.Cookie);
                 await LoadLibrariesAsync(restorePreferredSelection: false);
             }
             catch (Exception ex)
@@ -1199,6 +1218,8 @@ public partial class MainWindowViewModel(
             SessionSummary = $"登录成功：{session.Source} / {session.SavedAt:yyyy-MM-dd HH:mm:ss}";
             UpdateSidebarCookieExpiry(session.Cookie);
             await RefreshHomeUserDisplayNameAsync(session.Cookie);
+            await RefreshHomeUserStatisticsAsync(session.Cookie);
+            await TriggerAutomaticCreditSignInAsync(session.Cookie);
             await LoadLibrariesAsync(restorePreferredSelection: false);
             SelectedTabIndex = 1;
         }
@@ -1227,6 +1248,8 @@ public partial class MainWindowViewModel(
             UpdateSidebarCookieExpiry(session.Cookie);
             await NotifySessionRestoredAsync(session.Cookie);
             await RefreshHomeUserDisplayNameAsync(session.Cookie);
+            await RefreshHomeUserStatisticsAsync(session.Cookie);
+            await TriggerAutomaticCreditSignInAsync(session.Cookie);
             await LoadLibrariesAsync(restorePreferredSelection: false);
         }
         catch (Exception ex)
@@ -1285,6 +1308,7 @@ public partial class MainWindowViewModel(
         UpdateHomeLockedVenuePresentation();
         UpdateHomeHeroPresentation(DateTimeOffset.Now);
         UpdateHomeSystemInfoPresentation();
+        HomeStudyTimeText = HomeRankText = HomeDayLongestText = HomeCreditText = "--";
         UpdateReservationPresentation([]);
         ApplyGrabStatus(CoordinatorStatus.Idle("抢座"));
     }
@@ -1950,7 +1974,8 @@ public partial class MainWindowViewModel(
             LastLibraryName = SelectedLibrary?.Name,
             SuccessfulReservationCount = _historicalSuccessCount,
             TotalGuardSeconds = GetCurrentTotalGuardSeconds(DateTimeOffset.Now),
-            DailyCheckoutEnabled = DailyCheckoutEnabled
+            DailyCheckoutEnabled = DailyCheckoutEnabled,
+            AutoCreditSignInEnabled = AutoCreditSignInEnabled
         };
         await settingsService.SaveAsync(settings);
         await _appThemeService.ApplySettingsAsync(settings);
@@ -2112,7 +2137,24 @@ public partial class MainWindowViewModel(
             ApiTimeoutSeconds = settings.ApiTimeoutSeconds;
             RetryCount = settings.RetryCount;
             DailyCheckoutEnabled = settings.DailyCheckoutEnabled;
+            AutoCreditSignInEnabled = settings.AutoCreditSignInEnabled;
             DailyCheckoutTime = string.IsNullOrWhiteSpace(settings.DailyCheckoutTime) ? "21:30" : settings.DailyCheckoutTime;
+            if (DailyCheckoutEnabled)
+            {
+                try
+                {
+                    DailyCheckoutEnabled = await dailyCheckoutTaskScheduler.ExistsAsync();
+                    if (!DailyCheckoutEnabled)
+                    {
+                        await settingsService.SaveAsync(settings with { DailyCheckoutEnabled = false });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DailyCheckoutEnabled = false;
+                    activityLogService.Write(LogEntryKind.Warning, "DailyCheckout", $"检查每日退座任务失败：{ex.Message}");
+                }
+            }
             DailyCheckoutStatusText = DailyCheckoutEnabled
                 ? $"已启用，每天 {DailyCheckoutTime} 自动执行。"
                 : "未启用。";
@@ -3069,7 +3111,19 @@ public partial class MainWindowViewModel(
         HomeReservationBadgeText = "生效中";
         HomeReservationBadgeBrush = GrabStateSuccessBrush;
         HomeReservationBadgeBackgroundBrush = DashboardSuccessSoftBrush;
-        HomeReservationRemainingText = FormatReservationRemaining(remaining);
+        HomeReservationRemainingText = _currentReservation.IsCheckedIn
+            ? FormatStudyElapsed(_currentReservation.StudyElapsedSeconds)
+            : FormatReservationRemaining(remaining);
+    }
+
+    private static string FormatStudyElapsed(int seconds)
+    {
+        var elapsed = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return elapsed.TotalHours >= 1
+            ? $"已学习 {(int)elapsed.TotalHours} 小时"
+            : elapsed.TotalMinutes >= 1
+                ? $"已学习 {Math.Max(1, elapsed.Minutes)} 分钟"
+                : $"已学习 {Math.Max(0, elapsed.Seconds)} 秒";
     }
 
     private void RefreshHomeReservationRecordViewModels(DateTimeOffset now)
@@ -3244,12 +3298,68 @@ public partial class MainWindowViewModel(
         };
     }
 
+    private async Task RefreshHomeUserStatisticsAsync(string cookie)
+    {
+        try
+        {
+            var statistics = await apiClient.GetUserStatisticsAsync(cookie);
+            HomeStudyTimeText = statistics.AllTime;
+            HomeRankText = statistics.Rank;
+            HomeDayLongestText = statistics.DayTime;
+            HomeCreditText = statistics.Credit;
+        }
+        catch (Exception ex)
+        {
+            HomeStudyTimeText = HomeRankText = HomeDayLongestText = HomeCreditText = "--";
+            activityLogService.Write(LogEntryKind.Warning, "Statistics", $"读取个人统计失败：{ex.Message}");
+        }
+    }
+
     [RelayCommand]
     private async Task CompleteCreditSignInAsync()
     {
-        if (!IsAuthorized || string.IsNullOrWhiteSpace(sessionService.CurrentSession?.Cookie))
+        await CompleteCreditSignInCoreAsync(showNotification: true);
+    }
+
+    private async Task TriggerAutomaticCreditSignInAsync(string cookie)
+    {
+        if (string.IsNullOrWhiteSpace(cookie))
         {
-            await notificationService.ShowWarningAsync("请先登录", "完成微信授权后才能进行积分签到。");
+            return;
+        }
+
+        CreditSignStatusText = AutoCreditSignInEnabled
+            ? "正在自动签到并检查今日状态..."
+            : "正在检查今日积分签到状态...";
+        if (AutoCreditSignInEnabled)
+        {
+            await CompleteCreditSignInCoreAsync(cookie, showNotification: false);
+            return;
+        }
+
+        try
+        {
+            CreditSignStatusText = await apiClient.GetCreditSignInStatusAsync(cookie)
+                ? "今日积分签到已完成。"
+                : "今日尚未签到。";
+        }
+        catch (Exception ex)
+        {
+            CreditSignStatusText = $"积分签到状态获取失败：{ex.Message}";
+            activityLogService.Write(LogEntryKind.Warning, "CreditSignIn", CreditSignStatusText);
+        }
+    }
+
+    private async Task CompleteCreditSignInCoreAsync(string? cookie = null, bool showNotification = true)
+    {
+        cookie ??= sessionService.CurrentSession?.Cookie;
+        if (!IsAuthorized || string.IsNullOrWhiteSpace(cookie))
+        {
+            if (showNotification)
+            {
+                await notificationService.ShowWarningAsync("请先登录", "完成微信授权后才能进行积分签到。");
+            }
+
             return;
         }
 
@@ -3262,16 +3372,23 @@ public partial class MainWindowViewModel(
         CreditSignStatusText = "正在查询积分签到状态...";
         try
         {
-            var completed = await apiClient.CompleteCreditSignInAsync(sessionService.CurrentSession.Cookie);
+            var completed = await apiClient.CompleteCreditSignInAsync(cookie);
             CreditSignStatusText = completed ? "今日积分签到已完成。" : "今日已经签到，无需重复操作。";
-            await notificationService.ShowSuccessAsync(
-                completed ? "签到成功" : "今日已签到",
-                completed ? "积分签到已完成，奖励将按公众号规则发放。" : "今天的积分签到任务已经完成。");
+            if (showNotification)
+            {
+                await notificationService.ShowSuccessAsync(
+                    completed ? "签到成功" : "今日已签到",
+                    completed ? "积分签到已完成，奖励将按公众号规则发放。" : "今天的积分签到任务已经完成。");
+            }
         }
         catch (Exception ex)
         {
             CreditSignStatusText = $"积分签到失败：{ex.Message}";
-            await notificationService.ShowWarningAsync("积分签到失败", ex.Message);
+            activityLogService.Write(LogEntryKind.Warning, "CreditSignIn", CreditSignStatusText);
+            if (showNotification)
+            {
+                await notificationService.ShowWarningAsync("积分签到失败", ex.Message);
+            }
         }
         finally
         {

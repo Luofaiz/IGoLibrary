@@ -12,7 +12,8 @@ public sealed record ReservationRecord(
     DateTimeOffset? ExpirationTime,
     DateOnly? ReservationDate,
     bool IsUsed = false,
-    bool IsCheckedIn = false)
+    bool IsCheckedIn = false,
+    int StudyElapsedSeconds = 0)
 {
     public bool CanCancel => Kind switch
     {

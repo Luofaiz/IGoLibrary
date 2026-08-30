@@ -18,7 +18,8 @@ public sealed record AppSettings(
     long TotalGuardSeconds = 0,
     string? CachedUserNickname = null,
     bool DailyCheckoutEnabled = false,
-    string DailyCheckoutTime = "21:30")
+    string DailyCheckoutTime = "21:30",
+    bool AutoCreditSignInEnabled = true)
 {
     public static AppSettings Default { get; } = new(
         NotificationsEnabled: true,
@@ -36,5 +37,6 @@ public sealed record AppSettings(
         TotalGuardSeconds: 0,
         CachedUserNickname: null,
         DailyCheckoutEnabled: false,
-        DailyCheckoutTime: "21:30");
+        DailyCheckoutTime: "21:30",
+        AutoCreditSignInEnabled: true);
 }

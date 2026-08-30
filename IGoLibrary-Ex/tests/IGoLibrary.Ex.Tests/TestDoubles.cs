@@ -107,6 +107,11 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
 
     public Task<bool> CompleteCreditSignInAsync(string cookie, CancellationToken cancellationToken = default)
         => Task.FromResult(false);
+    public Task<bool> GetCreditSignInStatusAsync(string cookie, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
+    public Task<UserStatistics> GetUserStatisticsAsync(string cookie, CancellationToken cancellationToken = default)
+        => Task.FromResult(new UserStatistics("--", "--", "--", "--"));
 }
 
 internal sealed class FakeCredentialStore : ICredentialStore
@@ -263,6 +268,9 @@ internal sealed class FakeDailyCheckoutTaskScheduler : IDailyCheckoutTaskSchedul
         LastCheckoutTime = checkoutTime;
         return Exception is null ? Task.CompletedTask : Task.FromException(Exception);
     }
+
+    public Task<bool> ExistsAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(LastEnabled == true);
 }
 
 internal sealed class FakeAppThemeService : IAppThemeService

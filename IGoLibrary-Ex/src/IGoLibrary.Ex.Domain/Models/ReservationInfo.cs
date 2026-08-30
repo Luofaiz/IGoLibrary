@@ -7,4 +7,5 @@ public sealed record ReservationInfo(
     string SeatKey,
     string SeatName,
     DateTimeOffset ExpirationTime,
-    bool IsCheckedIn = false);
+    bool IsCheckedIn = false,
+    int StudyElapsedSeconds = 0);

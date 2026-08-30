@@ -643,26 +643,12 @@
                 <StackPanel Spacing="12">
                   <TextBlock Classes="dashboard-eyebrow" Text="系统信息" />
 
-                  <Border Classes="dashboard-info-row">
-                    <StackPanel Spacing="4">
-                      <TextBlock Classes="dashboard-ticket-caption" Text="核心引擎" />
-                      <TextBlock FontSize="18"
-                                 FontWeight="SemiBold"
-                                 Foreground="{DynamicResource SemiTextPrimaryBrush}"
-                                 Text="{Binding HomeEngineSummaryText}"
-                                 TextWrapping="Wrap" />
-                    </StackPanel>
-                  </Border>
-
-                  <Border Classes="dashboard-info-row">
-                    <StackPanel Spacing="4">
-                      <TextBlock Classes="dashboard-ticket-caption" Text="内存占用" />
-                      <TextBlock FontSize="18"
-                                 FontWeight="SemiBold"
-                                 Foreground="{DynamicResource SemiTextPrimaryBrush}"
-                                 Text="{Binding HomeMemoryUsageText}" />
-                    </StackPanel>
-                  </Border>
+                  <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12">
+                    <Border Classes="dashboard-info-row"><StackPanel Spacing="4"><TextBlock Classes="dashboard-ticket-caption" Text="学习时间" /><TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding HomeStudyTimeText}" /></StackPanel></Border>
+                    <Border Grid.Column="1" Classes="dashboard-info-row"><StackPanel Spacing="4"><TextBlock Classes="dashboard-ticket-caption" Text="排名" /><TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding HomeRankText}" /></StackPanel></Border>
+                    <Border Grid.Row="1" Classes="dashboard-info-row"><StackPanel Spacing="4"><TextBlock Classes="dashboard-ticket-caption" Text="单日最长" /><TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding HomeDayLongestText}" /></StackPanel></Border>
+                    <Border Grid.Row="1" Grid.Column="1" Classes="dashboard-info-row"><StackPanel Spacing="4"><TextBlock Classes="dashboard-ticket-caption" Text="积分" /><TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding HomeCreditText}" /></StackPanel></Border>
+                  </Grid>
                 </StackPanel>
               </Border>
             </Grid>
@@ -1717,7 +1703,20 @@
                     <CheckBox Content="屏幕右下角展示应用横幅通知" IsChecked="{Binding NotificationsEnabled}" />
                     <CheckBox Content="当任务进行时，右上角关闭会最小化到托盘" IsChecked="{Binding MinimizeToTrayEnabled}" />
                     <CheckBox Content="自定义接口地址和查询语法" IsChecked="{Binding CustomApiOverridesEnabled}" FontWeight="Bold" Foreground="{DynamicResource SemiWarningTextBrush}"/>
-                    
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="登录后自动积分签到" FontWeight="SemiBold" />
+                        <TextBlock Classes="helper-text"
+                                   Text="登录或恢复会话后自动领取每日积分；账户页仍保留手动签到按钮。"
+                                   TextWrapping="Wrap" />
+                      </StackPanel>
+                      <ToggleSwitch Grid.Column="1"
+                                    IsChecked="{Binding AutoCreditSignInEnabled}"
+                                    OnContent="开"
+                                    OffContent="关"
+                                    VerticalAlignment="Center" />
+                    </Grid>
+
                     <Separator Background="{DynamicResource AppSeparatorBrush}" Margin="0,8"/>
                     
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="16">

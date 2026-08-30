@@ -129,6 +129,29 @@ public sealed class TraceIntApiClient(
         return string.IsNullOrWhiteSpace(nickname) ? null : nickname;
     }
 
+    public async Task<UserStatistics> GetUserStatisticsAsync(string cookie, CancellationToken cancellationToken = default)
+    {
+        const string payload = "{\"operationName\":\"index\",\"query\":\"query index { userAuth { tongJi { rank allTime dayTime } currentUser { user_credit } } }\"}";
+        using var response = await SendGraphQlAsync(cookie, payload, cancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        ThrowIfGraphQlError(document.RootElement);
+        var userAuth = document.RootElement.GetProperty("data").GetProperty("userAuth");
+        var statistics = userAuth.GetProperty("tongJi");
+        var user = userAuth.GetProperty("currentUser");
+        return new UserStatistics(
+            ReadOptionalValue(statistics, "rank"),
+            ReadOptionalValue(statistics, "allTime"),
+            ReadOptionalValue(statistics, "dayTime"),
+            ReadOptionalValue(user, "user_credit"));
+    }
+
+    private static string ReadOptionalValue(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out var value) && value.ValueKind != JsonValueKind.Null
+            ? value.ToString()
+            : "--";
+    }
+
     public async Task<bool> CompleteCreditSignInAsync(string cookie, CancellationToken cancellationToken = default)
     {
         var getTasksPayload = JsonSerializer.Serialize(new
@@ -169,6 +192,17 @@ public sealed class TraceIntApiClient(
         using var doneDocument = JsonDocument.Parse(doneRaw);
         ThrowIfGraphQlError(doneDocument.RootElement);
         return true;
+    }
+
+    public async Task<bool> GetCreditSignInStatusAsync(string cookie, CancellationToken cancellationToken = default)
+    {
+        const string payload = "{\"operationName\":\"getList\",\"query\":\"query getList { userAuth { credit { tasks { task_type status } } } }\"}";
+        using var response = await SendGraphQlAsync(cookie, payload, cancellationToken);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        ThrowIfGraphQlError(document.RootElement);
+        var tasks = document.RootElement.GetProperty("data").GetProperty("userAuth").GetProperty("credit").GetProperty("tasks");
+        var signTask = tasks.EnumerateArray().FirstOrDefault(task => task.TryGetProperty("task_type", out var type) && type.GetString() == "sign");
+        return signTask.ValueKind != JsonValueKind.Undefined && signTask.TryGetProperty("status", out var status) && status.ToString() == "2";
     }
 
     public async Task<LibraryLayout> GetLibraryLayoutAsync(string cookie, int libraryId, CancellationToken cancellationToken = default)
@@ -333,7 +367,8 @@ public sealed class TraceIntApiClient(
             today.SeatKey,
             today.SeatName,
             today.ExpirationTime.Value,
-            today.IsCheckedIn);
+            today.IsCheckedIn,
+            today.StudyElapsedSeconds);
     }
 
     public async Task<IReadOnlyList<ReservationRecord>> GetReservationRecordsAsync(string cookie, CancellationToken cancellationToken = default)
@@ -613,7 +648,8 @@ public sealed class TraceIntApiClient(
             ReadOptionalStringProperty(reservation, "seat_name"),
             expirationTime,
             ResolveTodayReservationDate(reservation, expirationTime),
-            IsCheckedIn: IsTodayReservationCheckedIn(reservation));
+            IsCheckedIn: IsTodayReservationCheckedIn(reservation),
+            StudyElapsedSeconds: ReadOptionalIntProperty(reservation, "diff"));
         return true;
     }
 

@@ -69,6 +69,17 @@ public sealed class WindowsDailyCheckoutTaskScheduler : IDailyCheckoutTaskSchedu
         }
     }
 
+    public async Task<bool> ExistsAsync(CancellationToken cancellationToken = default)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        var result = await RunSchtasksAsync(["/Query", "/TN", TaskName], cancellationToken);
+        return result.ExitCode == 0;
+    }
+
     internal static string BuildTaskXml(string executablePath, string userSid, DateTime now, TimeSpan? checkoutTime = null)
     {
         XNamespace ns = "http://schemas.microsoft.com/windows/2004/02/mit/task";

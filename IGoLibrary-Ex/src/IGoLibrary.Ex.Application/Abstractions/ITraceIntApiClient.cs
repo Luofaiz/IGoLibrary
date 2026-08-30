@@ -12,6 +12,8 @@ public interface ITraceIntApiClient
 
     Task<string?> GetCurrentUserNicknameAsync(string cookie, CancellationToken cancellationToken = default);
 
+    Task<UserStatistics> GetUserStatisticsAsync(string cookie, CancellationToken cancellationToken = default);
+
     Task<LibraryLayout> GetLibraryLayoutAsync(string cookie, int libraryId, CancellationToken cancellationToken = default);
 
     Task<LibraryLayout> GetPrereserveLibraryLayoutAsync(string cookie, int libraryId, CancellationToken cancellationToken = default);
@@ -33,4 +35,5 @@ public interface ITraceIntApiClient
     Task<bool> CancelPrereserveAsync(string cookie, CancellationToken cancellationToken = default);
 
     Task<bool> CompleteCreditSignInAsync(string cookie, CancellationToken cancellationToken = default);
+    Task<bool> GetCreditSignInStatusAsync(string cookie, CancellationToken cancellationToken = default);
 }
