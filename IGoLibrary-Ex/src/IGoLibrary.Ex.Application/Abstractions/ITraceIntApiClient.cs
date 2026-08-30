@@ -31,4 +31,6 @@ public interface ITraceIntApiClient
     Task<bool> CancelReservationAsync(string cookie, string reservationToken, CancellationToken cancellationToken = default);
 
     Task<bool> CancelPrereserveAsync(string cookie, CancellationToken cancellationToken = default);
+
+    Task<bool> CompleteCreditSignInAsync(string cookie, CancellationToken cancellationToken = default);
 }

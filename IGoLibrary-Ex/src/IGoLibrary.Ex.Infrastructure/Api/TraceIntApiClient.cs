@@ -129,6 +129,48 @@ public sealed class TraceIntApiClient(
         return string.IsNullOrWhiteSpace(nickname) ? null : nickname;
     }
 
+    public async Task<bool> CompleteCreditSignInAsync(string cookie, CancellationToken cancellationToken = default)
+    {
+        var getTasksPayload = JsonSerializer.Serialize(new
+        {
+            operationName = "getList",
+            query = "query getList { userAuth { credit { tasks { id task_type status } } } }"
+        });
+        using var tasksResponse = await SendGraphQlAsync(cookie, getTasksPayload, cancellationToken);
+        var tasksRaw = await tasksResponse.Content.ReadAsStringAsync(cancellationToken);
+        using var tasksDocument = JsonDocument.Parse(tasksRaw);
+        ThrowIfGraphQlError(tasksDocument.RootElement);
+
+        var tasks = tasksDocument.RootElement.GetProperty("data")
+            .GetProperty("userAuth")
+            .GetProperty("credit")
+            .GetProperty("tasks");
+        var signTask = tasks.EnumerateArray()
+            .FirstOrDefault(task => task.TryGetProperty("task_type", out var type) && type.GetString() == "sign");
+        if (signTask.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            throw new InvalidOperationException("未找到积分签到任务。");
+        }
+
+        if (signTask.TryGetProperty("status", out var status) && status.ToString() == "2")
+        {
+            return false;
+        }
+
+        var taskId = signTask.GetProperty("id").GetInt32();
+        var donePayload = JsonSerializer.Serialize(new
+        {
+            operationName = "done",
+            query = "mutation done($user_task_id: Int!) { userAuth { credit { done(user_task_id: $user_task_id) } } }",
+            variables = new { user_task_id = taskId }
+        });
+        using var doneResponse = await SendGraphQlAsync(cookie, donePayload, cancellationToken);
+        var doneRaw = await doneResponse.Content.ReadAsStringAsync(cancellationToken);
+        using var doneDocument = JsonDocument.Parse(doneRaw);
+        ThrowIfGraphQlError(doneDocument.RootElement);
+        return true;
+    }
+
     public async Task<LibraryLayout> GetLibraryLayoutAsync(string cookie, int libraryId, CancellationToken cancellationToken = default)
     {
         var templates = await protocolTemplateStore.GetEffectiveTemplatesAsync(cancellationToken);

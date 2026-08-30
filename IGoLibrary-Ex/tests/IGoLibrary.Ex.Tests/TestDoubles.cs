@@ -104,6 +104,9 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
 
     public Task<bool> CancelPrereserveAsync(string cookie, CancellationToken cancellationToken = default)
         => OnCancelPrereserveAsync?.Invoke(cookie, cancellationToken) ?? Task.FromResult(false);
+
+    public Task<bool> CompleteCreditSignInAsync(string cookie, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
 }
 
 internal sealed class FakeCredentialStore : ICredentialStore

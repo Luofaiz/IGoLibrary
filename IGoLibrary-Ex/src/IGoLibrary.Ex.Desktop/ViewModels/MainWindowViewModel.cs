@@ -505,6 +505,12 @@ public partial class MainWindowViewModel(
     private bool dailyCheckoutEnabled;
 
     [ObservableProperty]
+    private bool creditSigningIn;
+
+    [ObservableProperty]
+    private string creditSignStatusText = "登录后可领取每日积分签到奖励。";
+
+    [ObservableProperty]
     private string dailyCheckoutTime = "21:30";
 
     [ObservableProperty]
@@ -3236,6 +3242,41 @@ public partial class MainWindowViewModel(
             < 23 => $"晚上好，{_homeUserDisplayName}",
             _ => $"夜深了，{_homeUserDisplayName}"
         };
+    }
+
+    [RelayCommand]
+    private async Task CompleteCreditSignInAsync()
+    {
+        if (!IsAuthorized || string.IsNullOrWhiteSpace(sessionService.CurrentSession?.Cookie))
+        {
+            await notificationService.ShowWarningAsync("请先登录", "完成微信授权后才能进行积分签到。");
+            return;
+        }
+
+        if (CreditSigningIn)
+        {
+            return;
+        }
+
+        CreditSigningIn = true;
+        CreditSignStatusText = "正在查询积分签到状态...";
+        try
+        {
+            var completed = await apiClient.CompleteCreditSignInAsync(sessionService.CurrentSession.Cookie);
+            CreditSignStatusText = completed ? "今日积分签到已完成。" : "今日已经签到，无需重复操作。";
+            await notificationService.ShowSuccessAsync(
+                completed ? "签到成功" : "今日已签到",
+                completed ? "积分签到已完成，奖励将按公众号规则发放。" : "今天的积分签到任务已经完成。");
+        }
+        catch (Exception ex)
+        {
+            CreditSignStatusText = $"积分签到失败：{ex.Message}";
+            await notificationService.ShowWarningAsync("积分签到失败", ex.Message);
+        }
+        finally
+        {
+            CreditSigningIn = false;
+        }
     }
 
     private async Task RefreshHomeUserDisplayNameAsync(string cookie)

@@ -760,6 +760,16 @@
                               Classes="helper-text"
                               TextAlignment="Center"
                               MaxWidth="260" />
+                    <Button Content="积分签到"
+                            Command="{Binding CompleteCreditSignInCommand}"
+                            MinWidth="160"
+                            HorizontalAlignment="Center"
+                            HorizontalContentAlignment="Center" />
+                    <TextBlock Text="{Binding CreditSignStatusText}"
+                               Classes="helper-text"
+                               TextAlignment="Center"
+                               MaxWidth="320"
+                               TextWrapping="Wrap" />
                     <Button Content="注销授权 / 重新授权"
                             Command="{Binding SignOutCommand}"
                             Classes="Danger"
