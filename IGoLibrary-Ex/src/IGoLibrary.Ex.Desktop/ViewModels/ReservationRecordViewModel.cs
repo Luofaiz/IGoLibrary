@@ -44,7 +44,7 @@ public sealed partial class ReservationRecordViewModel(
 
             if (Record.IsCheckedIn)
             {
-                return "学习中";
+                return FormatStudyElapsed(Record.StudyElapsedSeconds);
             }
 
             if (Record.ExpirationTime is null)
@@ -141,5 +141,15 @@ public sealed partial class ReservationRecordViewModel(
         }
 
         return $"{Math.Max(0, remaining.Seconds)} 秒";
+    }
+
+    private static string FormatStudyElapsed(int seconds)
+    {
+        var elapsed = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return elapsed.TotalHours >= 1
+            ? $"已学习 {(int)elapsed.TotalHours} 小时"
+            : elapsed.TotalMinutes >= 1
+                ? $"已学习 {Math.Max(1, elapsed.Minutes)} 分钟"
+                : $"已学习 {Math.Max(0, elapsed.Seconds)} 秒";
     }
 }

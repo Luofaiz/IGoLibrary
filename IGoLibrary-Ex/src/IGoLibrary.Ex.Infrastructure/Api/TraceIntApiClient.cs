@@ -684,6 +684,13 @@ public sealed class TraceIntApiClient(
 
     private static bool IsTodayReservationCheckedIn(JsonElement reservation)
     {
+        if (reservation.TryGetProperty("status", out var status) &&
+            ((status.ValueKind == JsonValueKind.Number && status.TryGetInt32(out var statusNumber) && statusNumber == 3) ||
+             (status.ValueKind == JsonValueKind.String && status.GetString() == "3")))
+        {
+            return true;
+        }
+
         if (ReadOptionalUnixTimestampProperty(reservation, "validate_date") is not null)
         {
             return true;

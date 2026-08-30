@@ -641,7 +641,7 @@
                       MinHeight="242"
                       Padding="20">
                 <StackPanel Spacing="12">
-                  <TextBlock Classes="dashboard-eyebrow" Text="系统信息" />
+                  <TextBlock Classes="dashboard-eyebrow" Text="个人信息" />
 
                   <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="12" RowSpacing="12">
                     <Border Classes="dashboard-info-row"><StackPanel Spacing="4"><TextBlock Classes="dashboard-ticket-caption" Text="学习时间" /><TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding HomeStudyTimeText}" /></StackPanel></Border>
