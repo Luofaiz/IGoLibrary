@@ -3174,16 +3174,6 @@ public partial class MainWindowViewModel(
                 : $"已学习 {Math.Max(0, elapsed.Seconds)} 秒";
     }
 
-    private async Task RecordAndStartAsync(string taskType, string source, Func<Task> start)
-    {
-        if (_taskLaunchHistoryService is not null)
-        {
-            try { await _taskLaunchHistoryService.RecordAsync(taskType, source); }
-            catch (Exception ex) { activityLogService.Write(LogEntryKind.Warning, "Task", $"记录任务启动历史失败：{ex.Message}"); }
-        }
-
-        await start();
-    }
 
     private void RefreshHomeReservationRecordViewModels(DateTimeOffset now)
     {
