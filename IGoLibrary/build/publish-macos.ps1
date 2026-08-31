@@ -3,7 +3,7 @@ param(
     [string]$Runtime = "osx-arm64",
     [string]$AppName = "IGoLibrary",
     [string]$BundleIdentifier = "com.igolibrary.ex",
-    [string]$AppVersion = "1.0.0",
+    [string]$AppVersion = "1.0.17",
     [string]$PackageName,
     [string]$PublishOutput,
     [switch]$SkipPublish

@@ -34,8 +34,10 @@ public partial class MainWindowViewModel(
     IAppThemeService appThemeService,
     AppWindowService appWindowService,
     IDailyCheckoutTaskScheduler dailyCheckoutTaskScheduler,
-    IAppUpdateService appUpdateService) : ViewModelBase
+    IAppUpdateService appUpdateService,
+    ITaskLaunchHistoryService? taskLaunchHistoryService = null) : ViewModelBase
 {
+    private readonly ITaskLaunchHistoryService? _taskLaunchHistoryService = taskLaunchHistoryService;
     private readonly IAppThemeService _appThemeService = appThemeService;
     private readonly ObservableCollection<SeatItemViewModel> _allSeats = [];
     private readonly ObservableCollection<ReservationRecordViewModel> _homeReservationRecords = [];
@@ -1608,7 +1610,7 @@ public partial class MainWindowViewModel(
                     mode,
                     GrabStrategyFactory.FromMode(mode),
                     scheduledStart);
-                await tomorrowReservationCoordinator.StartAsync(plan);
+                await RecordAndStartAsync("TomorrowReservation", "Desktop", () => tomorrowReservationCoordinator.StartAsync(plan));
             }
             else
             {
@@ -1620,7 +1622,7 @@ public partial class MainWindowViewModel(
                     mode,
                     GrabStrategyFactory.FromMode(mode),
                     scheduledStart);
-                await grabSeatCoordinator.StartAsync(plan);
+                await RecordAndStartAsync("GrabSeat", "Desktop", () => grabSeatCoordinator.StartAsync(plan));
             }
         }
         catch (Exception ex)
@@ -1654,7 +1656,7 @@ public partial class MainWindowViewModel(
                     scheduledStart,
                     UseRandomAvailableSeat: true);
 
-                await tomorrowReservationCoordinator.StartAsync(tomorrowPlan);
+                await RecordAndStartAsync("TomorrowReservation", "Desktop", () => tomorrowReservationCoordinator.StartAsync(tomorrowPlan));
                 return;
             }
 
@@ -1667,7 +1669,7 @@ public partial class MainWindowViewModel(
                 scheduledStart,
                 UseRandomAvailableSeat: true);
 
-            await grabSeatCoordinator.StartAsync(plan);
+            await RecordAndStartAsync("GrabSeat", "Desktop", () => grabSeatCoordinator.StartAsync(plan));
         }
         catch (Exception ex)
         {
@@ -1950,7 +1952,7 @@ public partial class MainWindowViewModel(
                 (RefreshMode)SelectedRefreshModeIndex,
                 triggerMode,
                 scheduledTime);
-            await occupySeatCoordinator.StartAsync(plan);
+            await RecordAndStartAsync("OccupySeat", "Desktop", () => occupySeatCoordinator.StartAsync(plan));
         }
         catch (Exception ex)
         {
@@ -3170,6 +3172,17 @@ public partial class MainWindowViewModel(
             : elapsed.TotalMinutes >= 1
                 ? $"已学习 {Math.Max(1, elapsed.Minutes)} 分钟"
                 : $"已学习 {Math.Max(0, elapsed.Seconds)} 秒";
+    }
+
+    private async Task RecordAndStartAsync(string taskType, string source, Func<Task> start)
+    {
+        if (_taskLaunchHistoryService is not null)
+        {
+            try { await _taskLaunchHistoryService.RecordAsync(taskType, source); }
+            catch (Exception ex) { activityLogService.Write(LogEntryKind.Warning, "Task", $"记录任务启动历史失败：{ex.Message}"); }
+        }
+
+        await start();
     }
 
     private void RefreshHomeReservationRecordViewModels(DateTimeOffset now)

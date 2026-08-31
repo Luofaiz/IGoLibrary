@@ -1,6 +1,6 @@
 #define MyAppName "IGoLibrary"
 #ifndef MyAppVersion
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.17"
 #endif
 #define MyAppPublisher "EJianZQ"
 #define MyAppExeName "IGoLibrary.exe"

@@ -22,12 +22,23 @@ public static class DependencyInjection
         services.AddSingleton<TraceListenerRegistrar>();
         services.AddSingleton<ISettingsRepository, SqliteSettingsRepository>();
         services.AddSingleton<IFavoritesRepository, SqliteFavoritesRepository>();
+        services.AddSingleton<ITaskLaunchHistoryService, SqliteTaskLaunchHistoryService>();
         services.AddSingleton<IProtocolTemplateStore, DefaultProtocolTemplateStore>();
         services.AddSingleton<ICredentialStore>(_ => PlatformCredentialStore.CreateDefault());
         services.AddSingleton<IPrereserveQueueClient, PrereserveQueueClient>();
         services.AddSingleton<ISmtpTransportClientFactory, MailKitSmtpTransportClientFactory>();
         services.AddSingleton<IEmailAlertSender, SmtpEmailAlertSender>();
 
+        services.AddSingleton<TraceIntRequestPolicy>();
+        services.AddHttpClient<TraceIntGraphQlTransport>(client =>
+            {
+                client.Timeout = Timeout.InfiniteTimeSpan;
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.All,
+                UseCookies = false
+            });
         services.AddHttpClient<ITraceIntApiClient, TraceIntApiClient>(client =>
             {
                 client.Timeout = Timeout.InfiniteTimeSpan;

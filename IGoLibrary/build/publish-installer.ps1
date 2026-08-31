@@ -1,7 +1,7 @@
 param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
-    [string]$Version = "1.0.0",
+    [string]$Version = "1.0.17",
     [string]$RepoOwner = "Luofaiz",
     [string]$RepoName = "IGoLibrary",
     [string]$Notes = "Initial release."

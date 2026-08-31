@@ -1,6 +1,6 @@
 param(
     [string]$Configuration = "Release",
-    [string]$AppVersion = "1.0.0",
+    [string]$AppVersion = "1.0.17",
     [switch]$SkipPublish
 )
 

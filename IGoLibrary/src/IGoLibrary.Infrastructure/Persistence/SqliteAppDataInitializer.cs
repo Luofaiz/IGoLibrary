@@ -13,6 +13,8 @@ public sealed class SqliteAppDataInitializer(SqliteConnectionFactory connectionF
         await using var connection = connectionFactory.Create();
         await connection.OpenAsync(cancellationToken);
 
+        await AppDatabaseSchema.EnsureMetadataAsync(connection, cancellationToken);
+
         var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -31,6 +33,13 @@ public sealed class SqliteAppDataInitializer(SqliteConnectionFactory connectionF
             CREATE TABLE IF NOT EXISTS ProtocolOverrides (
                 Key TEXT PRIMARY KEY,
                 Value TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS TaskLaunchHistory (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                TaskType TEXT NOT NULL,
+                Source TEXT NOT NULL,
+                StartedAtUtc TEXT NOT NULL
             );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);

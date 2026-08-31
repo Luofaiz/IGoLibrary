@@ -1,6 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
 using IGoLibrary.Application.Abstractions;
 using IGoLibrary.Application.Exceptions;
@@ -19,12 +17,12 @@ public sealed class TraceIntApiClient(
     ISettingsService settingsService,
     AppRuntimeState? runtimeState = null,
     ICredentialStore? credentialStore = null,
-    IActivityLogService? activityLogService = null) : ITraceIntApiClient
+    IActivityLogService? activityLogService = null,
+    TraceIntRequestPolicy? requestPolicy = null,
+    TraceIntGraphQlTransport? graphQlTransport = null) : ITraceIntApiClient
 {
-    private const string DesktopUserAgent = "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63070626)";
-    private const string MobileWechatUserAgent = "Mozilla/5.0 (Linux; Android 10; TAS-AL00 Build/HUAWEITAS-AL00; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/107.0.5304.141 Mobile Safari/537.36 XWEB/5043 MMWEBSDK/20221109 MMWEBID/6856 MicroMessenger/8.0.31.2281(0x28001F59) WeChat/arm64 Weixin NetType/WIFI Language/zh_CN ABI/arm64";
-    private const string AppVersion = "2.0.11";
-    private const string PrereserveAppVersion = "2.0.14";
+    private readonly TraceIntRequestPolicy _requestPolicy = requestPolicy ?? new TraceIntRequestPolicy(settingsService);
+    private readonly TraceIntGraphQlTransport _graphQlTransport = graphQlTransport ?? new TraceIntGraphQlTransport(httpClient, requestPolicy ?? new TraceIntRequestPolicy(settingsService));
     private static readonly TimeSpan GetCookieTimeout = TimeSpan.FromSeconds(5);
     private readonly SemaphoreSlim _cookieUpdateGate = new(1, 1);
 
@@ -582,36 +580,9 @@ public sealed class TraceIntApiClient(
         CancellationToken cancellationToken,
         bool usePrereserveHeaders = false)
     {
-        return await ExecuteWithRequestPolicyAsync(async requestToken =>
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://wechat.v2.traceint.com/index.php/graphql/");
-            request.Version = HttpVersion.Version11;
-            request.VersionPolicy = HttpVersionPolicy.RequestVersionOrLower;
-            request.Headers.Host = "wechat.v2.traceint.com";
-            request.Headers.TryAddWithoutValidation("Cookie", cookie);
-            request.Headers.TryAddWithoutValidation("Connection", "keep-alive");
-            request.Headers.TryAddWithoutValidation("Origin", "https://web.traceint.com");
-            request.Headers.TryAddWithoutValidation("Referer", "https://web.traceint.com/web/index.html");
-            request.Headers.TryAddWithoutValidation("User-Agent", usePrereserveHeaders ? MobileWechatUserAgent : DesktopUserAgent);
-            request.Headers.TryAddWithoutValidation("App-Version", usePrereserveHeaders ? PrereserveAppVersion : AppVersion);
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
-            request.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate, br");
-            request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
-            request.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "same-site");
-            request.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "cors");
-            request.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "empty");
-            request.Headers.ExpectContinue = false;
-
-            var payloadBytes = Encoding.UTF8.GetBytes(payload);
-            request.Content = new ByteArrayContent(payloadBytes);
-            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            request.Content.Headers.ContentLength = payloadBytes.Length;
-
-            var response = await httpClient.SendAsync(request, requestToken);
-            response.EnsureSuccessStatusCode();
-            await TryUpdateSessionCookieFromResponseAsync(cookie, response, cancellationToken);
-            return response;
-        }, cancellationToken);
+        var response = await _graphQlTransport.SendAsync(cookie, payload, usePrereserveHeaders, cancellationToken);
+        await TryUpdateSessionCookieFromResponseAsync(cookie, response, cancellationToken);
+        return response;
     }
 
     private async Task<IReadOnlyList<ReservationRecord>> GetTomorrowReservationRecordsAsync(
@@ -938,70 +909,6 @@ public sealed class TraceIntApiClient(
         {
             _cookieUpdateGate.Release();
         }
-    }
-
-    private async Task<T> ExecuteWithRequestPolicyAsync<T>(
-        Func<CancellationToken, Task<T>> operation,
-        CancellationToken cancellationToken)
-    {
-        var settings = await LoadNetworkSettingsAsync(cancellationToken);
-        Exception? lastException = null;
-
-        for (var attempt = 0; attempt <= settings.RetryCount; attempt++)
-        {
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(settings.Timeout);
-
-            try
-            {
-                return await operation(timeoutCts.Token);
-            }
-            catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested && timeoutCts.IsCancellationRequested)
-            {
-                lastException = new TimeoutException($"请求超时（>{settings.Timeout.TotalSeconds:0} 秒）。", ex);
-            }
-            catch (HttpRequestException ex) when (IsTransient(ex.StatusCode))
-            {
-                lastException = ex;
-            }
-
-            if (attempt >= settings.RetryCount)
-            {
-                break;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(250 * (attempt + 1)), cancellationToken);
-        }
-
-        throw lastException ?? new InvalidOperationException("请求失败。");
-    }
-
-    private async Task<(TimeSpan Timeout, int RetryCount)> LoadNetworkSettingsAsync(CancellationToken cancellationToken)
-    {
-        AppSettings settings;
-        try
-        {
-            settings = await settingsService.LoadAsync(cancellationToken);
-        }
-        catch
-        {
-            settings = AppSettings.Default;
-        }
-
-        var timeoutSeconds = Math.Clamp(settings.ApiTimeoutSeconds, 1, 60);
-        var retryCount = Math.Clamp(settings.RetryCount, 0, 10);
-        return (TimeSpan.FromSeconds(timeoutSeconds), retryCount);
-    }
-
-    private static bool IsTransient(HttpStatusCode? statusCode)
-    {
-        return statusCode is null
-            or HttpStatusCode.RequestTimeout
-            or HttpStatusCode.TooManyRequests
-            or HttpStatusCode.BadGateway
-            or HttpStatusCode.ServiceUnavailable
-            or HttpStatusCode.GatewayTimeout
-            || (int?)statusCode >= 500;
     }
 
     private static void ThrowIfGraphQlError(JsonElement root)
