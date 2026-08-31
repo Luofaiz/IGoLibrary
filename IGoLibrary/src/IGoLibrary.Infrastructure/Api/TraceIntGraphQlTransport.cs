@@ -16,8 +16,7 @@ public sealed class TraceIntGraphQlTransport(HttpClient httpClient, TraceIntRequ
             using var request = new HttpRequestMessage(HttpMethod.Post, "https://wechat.v2.traceint.com/index.php/graphql/")
             {
                 Version = HttpVersion.Version11,
-                VersionPolicy = HttpVersionPolicy.RequestVersionOrLower,
-                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+                VersionPolicy = HttpVersionPolicy.RequestVersionOrLower
             };
             request.Headers.Host = "wechat.v2.traceint.com";
             request.Headers.TryAddWithoutValidation("Cookie", cookie);
@@ -33,6 +32,10 @@ public sealed class TraceIntGraphQlTransport(HttpClient httpClient, TraceIntRequ
             request.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "cors");
             request.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "empty");
             request.Headers.ExpectContinue = false;
+            var payloadBytes = Encoding.UTF8.GetBytes(payload);
+            request.Content = new ByteArrayContent(payloadBytes);
+            request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            request.Content.Headers.ContentLength = payloadBytes.Length;
 
             var response = await httpClient.SendAsync(request, requestToken);
             response.EnsureSuccessStatusCode();
