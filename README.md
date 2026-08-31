@@ -1,175 +1,73 @@
 # IGoLibrary
 
-IGoLibrary 是一个围绕“我去图书馆”预约流程重建的桌面客户端。当前仓库主线是 `IGoLibrary`，使用 Avalonia 重构桌面界面，并加入本地数据持久化、凭据存储、程序内更新检查和 Windows 安装包发布流程。
+IGoLibrary 是“我去图书馆”的第三方桌面预约助手，提供场馆查看、座位监控、预约和提醒功能。
 
-本项目仅用于学习、研究和个人自动化实验，不隶属于“我去图书馆”平台、学校或图书馆运营方。请在遵守所在学校、场馆和平台规则的前提下了解与使用。
+## 功能
 
-![IGoLibrary 主界面](docs/images/ex/主页.png)
+- 微信授权登录，也支持手动填写 Cookie
+- 自动读取账号可用场馆，支持绑定、切换和刷新
+- 查看场馆座位布局，搜索座位并隐藏已占用座位
+- 收藏座位：登录后自动读取公众号常用座位，并与本地收藏合并
+- 多座位抢座，支持直接预约、空座检查和随机空座策略
+- 定时启动抢座任务
+- 查看、取消当前预约，支持明日预约
+- Cookie 失效、抢座成功和任务失败提醒
+- SMTP 邮件提醒
+- 本地保存设置和收藏，减少重复配置
+- 检查 GitHub Release 并提示更新
 
-## 主要功能
+## 下载
 
-- 账户授权：支持通过微信登录回调链接获取会话 Cookie，并恢复本地保存的授权状态。
-- 场馆管理：自动加载账号可用场馆，支持预览、刷新和锁定当前作业场馆。
-- 座位浏览：展示场馆座位布局，支持搜索座位、隐藏已占座位和收藏常用座位。
-- 多目标抢座：可以选择多个目标座位并持续监控空闲状态，发现可预约时自动尝试提交。
-- 抢座策略：支持直接预约、先查空座再预约、随机空座预约等执行策略。
-- 定时任务：支持设定启动时间，让监控任务在指定时间后自动开始。
-- 预约管理：可刷新当前预约记录，取消已有预约，并辅助处理到期前重约流程。
-- 明日预约：包含明日预约相关的排队、座位选择和提交逻辑。
-- 本地提醒：Cookie 失效、抢座成功、任务失败等事件可通过 Toast 弹窗和提示音提醒。
-- 邮件提醒：支持配置 SMTP 邮件提醒，用于离开电脑时接收关键任务结果。
-- 本地数据：设置、收藏座位、自定义接口模板等数据保存在本机 SQLite 数据库中。
-- 安全存储：会话凭据优先保存到 Windows Credential Manager 或 macOS Keychain。
-- 程序更新：可读取 GitHub Release 中的 `latest.json`，发现新版本后下载并校验安装器。
+请前往 [Releases](https://github.com/Luofaiz/IGoLibrary/releases/latest) 下载最新版。
 
-## 下载和安装
+Windows 用户可以选择：
 
-请到 Releases 页面下载最新版：
+- `IGoLibrarySetup.exe`：安装版，适合日常使用
+- `IGoLibrary-Windows-x64.zip`：便携版，解压后直接运行 `IGoLibrary.exe`
 
-```text
-https://github.com/Luofaiz/IGoLibrary/releases/latest
-```
+## 使用
 
-Windows 用户推荐下载并运行：
+### 1. 登录授权
 
-```text
-IGoLibrarySetup.exe
-```
+打开程序后，使用微信打开程序提供的授权入口，复制授权链接并粘贴回程序。程序会自动获取并验证登录信息。
 
-也可以下载便携压缩包：
+如果无法使用授权链接，也可以在登录页面手动填写 Cookie。
 
-```text
-IGoLibrary-Windows-x64.zip
-```
+### 2. 绑定场馆
 
-安装后的主程序名为 `IGoLibrary.exe`。当前公开 Release 主要面向 Windows；仓库内保留了 macOS 打包脚本，但未签名、未公证的 macOS 包首次运行时可能需要手动解除系统隔离。
+登录成功后，程序会加载账号可用场馆。选择需要使用的场馆并绑定，然后刷新座位布局。
 
-### Android APK
+### 3. 收藏座位
 
-仓库包含一个 Android 原生客户端，可直接生成本地安装用 APK。当前移动端支持打开微信授权入口、展示微信扫码二维码、从剪贴板自动解析授权链接、验证登录、加载场馆、刷新今日/明日座位、输入目标座位后启动今日抢座和明日预约、一键随机空座持续抢座、停止任务、查询当前预约、取消今日/明日预约，以及基于当前预约启动占座守护。手动 Cookie 仍保留为备用方式，不再作为主登录入口。
+登录或刷新收藏时，程序会读取公众号中的常用座位，并和本地收藏合并。公众号删除常用座位不会删除程序中主动添加的本地收藏。
 
-APK 生成位置：
+在座位布局中选择座位并保存收藏。新增收藏会写入本地，座位按场馆 ID 和座位 ID 区分，不会因名称相同而误合并。
 
-```text
-IGoLibrary/artifacts/android/IGoLibrary-Android.apk
-```
+### 4. 抢座和预约
 
-Android 手机安装时需要开启“允许安装未知来源应用”。当前 APK 用于本地测试和侧载安装，暂未接入应用商店发布和正式签名证书。移动端已复用桌面端的抢座、明日预约和占座协调器，但 Android 系统可能限制长时间后台运行；执行任务时建议保持 App 在前台并避免系统省电策略杀掉进程。
+在抢座页面选择目标座位、刷新间隔和启动时间，然后开始任务。程序会持续检查座位状态，并在符合条件时提交预约。
 
-移动端微信登录说明：当前项目没有接入微信开放平台 App SDK，因此不能像官方 App 那样完成原生一键微信回跳登录。APK 会尝试打开微信网页授权入口；如果手机系统或微信限制外部唤起，可在 App 内查看二维码，使用微信扫码或识别二维码获取授权链接。授权后复制包含 `code=` 的链接并回到 App，App 会自动从剪贴板解析并登录。
+使用明日预约前，请确认场馆开放时间和平台规则；不同学校的预约接口和限制可能不同。
 
-如果手机已开启 USB 调试并连接到电脑，也可以直接安装：
+### 5. 更新
 
-```powershell
-cd .\IGoLibrary
-.\build\install-android.ps1
-```
+程序会检查 GitHub Releases 中的最新版本。发现更新后，按照提示下载并安装即可。更新不会主动删除本地设置、收藏和登录数据。
 
-## 程序更新
+## 本地数据
 
-桌面端默认读取这个更新清单：
-
-```text
-https://github.com/Luofaiz/IGoLibrary/releases/latest/download/latest.json
-```
-
-`latest.json` 会声明最新版本号、安装器下载地址和 SHA256。程序检测到新版本后，会下载 `IGoLibrarySetup.exe`，校验 SHA256，通过后再启动安装器。
-
-每次正式发布建议包含这些 Release 资产：
-
-- `IGoLibrarySetup.exe`
-- `latest.json`
-- `IGoLibrary-Windows-x64.zip`
-
-## 数据位置
-
-用户数据保存在本机，不会包含在安装包或 GitHub Release 中。
-
-Windows 默认目录：
+Windows 用户数据默认保存在：
 
 ```text
 %LOCALAPPDATA%\IGoLibrary
 ```
 
-macOS 默认目录：
-
-```text
-~/Library/Application Support/IGoLibrary
-```
-
-主要数据库文件是 `igolibrary-ex.db`，日志位于数据目录下的 `logs` 文件夹。可以通过环境变量 `IGOLIBRARY_EX_DATA_DIR` 覆盖默认数据目录。卸载或安装新版本不会主动删除这些本地数据。
-
-## 开发和构建
-
-主要项目位于 `IGoLibrary`：
-
-```text
-IGoLibrary/
-  src/
-    IGoLibrary.Domain/
-    IGoLibrary.Application/
-    IGoLibrary.Infrastructure/
-    IGoLibrary.Desktop/
-    IGoLibrary.Android/
-  tests/
-    IGoLibrary.Tests/
-  build/
-```
-
-开发环境：
-
-- .NET SDK `10.0.201` 或兼容的 roll-forward 版本
-- Windows 安装器构建需要 Inno Setup 6
-- Windows 开发可使用 Visual Studio 2022 或 `dotnet` CLI
-
-本地运行：
-
-```powershell
-cd .\IGoLibrary
-dotnet restore
-dotnet run --project .\src\IGoLibrary.Desktop\IGoLibrary.Desktop.csproj
-```
-
-运行测试：
-
-```powershell
-cd .\IGoLibrary
-dotnet test .\IGoLibrary.sln -c Release -p:UsedAvaloniaProducts=
-```
-
-构建 Windows 安装包和更新清单：
-
-```powershell
-cd .\IGoLibrary
-.\build\publish-installer.ps1 -Version "1.0.0" -Notes "Initial release."
-```
-
-构建 Android APK：
-
-```powershell
-cd .\IGoLibrary
-.\build\publish-android.ps1
-```
-
-上传或覆盖 GitHub Release 资产：
-
-```powershell
-cd .\IGoLibrary
-.\build\publish-github-release.ps1 -Version "1.0.0" -Repo "Luofaiz/IGoLibrary" -Notes "Initial release."
-```
-
-生成产物会写入 `IGoLibrary/artifacts/`，该目录已被 Git 忽略。
-
-## 安全注意
-
-- 不要提交 `.env`、安装包、数据库、日志、Cookie、Authorization 或个人配置。
-- Cookie 和 Authorization 值应视作密码处理。
-- 如果接口、GraphQL 模板或平台规则发生变化，请优先停止自动化任务并检查配置。
-- 本项目不保证适用于所有学校或所有场馆，也不承诺任何预约结果。
+其中包含本地设置、收藏、日志和会话信息。卸载或更新程序通常不会删除这些数据。
 
 ## 致谢
 
 感谢原项目 [EJianZQ/IGoLibrary](https://github.com/EJianZQ/IGoLibrary) 提供的项目基础。
+
+感谢 Avalonia、.NET、SQLite 以及项目所使用的其他开源组件。
 
 ## 许可证
 
