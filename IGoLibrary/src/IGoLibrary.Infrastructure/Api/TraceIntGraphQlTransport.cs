@@ -29,6 +29,9 @@ public sealed class TraceIntGraphQlTransport(HttpClient httpClient, TraceIntRequ
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
             request.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate, br");
             request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "same-site");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "cors");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "empty");
             request.Headers.ExpectContinue = false;
 
             var response = await httpClient.SendAsync(request, requestToken);
