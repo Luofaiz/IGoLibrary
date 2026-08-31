@@ -6,7 +6,12 @@ public interface IAppUpdateService
 
     Task<AppUpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken = default);
 
-    Task<AppUpdateInstallResult> InstallUpdateAsync(AppUpdateCheckResult update, CancellationToken cancellationToken = default);
+    Task<AppUpdateInstallResult> InstallUpdateAsync(AppUpdateCheckResult update, IProgress<UpdateDownloadProgress>? progress = null, CancellationToken cancellationToken = default);
+}
+
+public sealed record UpdateDownloadProgress(long BytesDownloaded, long? TotalBytes)
+{
+    public double? Percentage => TotalBytes is > 0 ? BytesDownloaded * 100d / TotalBytes.Value : null;
 }
 
 public sealed record AppUpdateCheckResult(

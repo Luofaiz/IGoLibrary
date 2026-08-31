@@ -664,6 +664,10 @@ public partial class MainWindowViewModel(
 
     public string CheckForUpdatesButtonText => IsCheckingForUpdates ? "检查中..." : "检查更新";
 
+    public bool IsDownloadingUpdate { get; private set; }
+
+    public double UpdateDownloadProgress { get; private set; }
+
     public double NotificationSegmentControlWidth => NotificationSegmentControlWidthValue;
 
     public double NotificationSegmentSliderWidth => NotificationSegmentSliderWidthValue;
@@ -1098,8 +1102,21 @@ public partial class MainWindowViewModel(
 
             if (confirmed && !string.IsNullOrWhiteSpace(result.DownloadUrl))
             {
-                UpdateStatusText = "正在下载安装程序...";
-                var installResult = await appUpdateService.InstallUpdateAsync(result);
+                IsDownloadingUpdate = true;
+                UpdateDownloadProgress = 0;
+                OnPropertyChanged(nameof(IsDownloadingUpdate));
+                OnPropertyChanged(nameof(UpdateDownloadProgress));
+                var progress = new Progress<UpdateDownloadProgress>(value =>
+                {
+                    UpdateDownloadProgress = value.Percentage ?? 0;
+                    UpdateStatusText = value.Percentage is double percentage
+                        ? $"正在下载安装程序... {percentage:0}%"
+                        : $"正在下载安装程序... 已下载 {value.BytesDownloaded / 1024d / 1024d:0.0} MB";
+                    OnPropertyChanged(nameof(UpdateDownloadProgress));
+                });
+                var installResult = await appUpdateService.InstallUpdateAsync(result, progress);
+                IsDownloadingUpdate = false;
+                OnPropertyChanged(nameof(IsDownloadingUpdate));
                 UpdateStatusText = "安装程序已启动，请按向导完成更新。";
                 await notificationService.ShowInfoAsync(
                     "安装程序已启动",
@@ -1122,6 +1139,11 @@ public partial class MainWindowViewModel(
         finally
         {
             IsCheckingForUpdates = false;
+            if (IsDownloadingUpdate)
+            {
+                IsDownloadingUpdate = false;
+                OnPropertyChanged(nameof(IsDownloadingUpdate));
+            }
         }
     }
 

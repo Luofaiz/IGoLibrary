@@ -1770,6 +1770,11 @@
                         <TextBlock Classes="helper-text"
                                    Text="{Binding UpdateStatusText}"
                                    TextWrapping="Wrap" />
+                        <ProgressBar IsVisible="{Binding IsDownloadingUpdate}"
+                                     Value="{Binding UpdateDownloadProgress}"
+                                     Minimum="0"
+                                     Maximum="100"
+                                     Height="6" />
                       </StackPanel>
                       <Button Grid.Column="1"
                               Content="{Binding CheckForUpdatesButtonText}"

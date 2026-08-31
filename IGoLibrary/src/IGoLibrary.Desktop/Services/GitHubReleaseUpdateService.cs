@@ -80,7 +80,7 @@ public sealed class GitHubReleaseUpdateService : IAppUpdateService, IDisposable
             manifest.ReleaseUrl);
     }
 
-    public async Task<AppUpdateInstallResult> InstallUpdateAsync(AppUpdateCheckResult update, CancellationToken cancellationToken = default)
+    public async Task<AppUpdateInstallResult> InstallUpdateAsync(AppUpdateCheckResult update, IProgress<UpdateDownloadProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(update.DownloadUrl))
         {
@@ -101,10 +101,20 @@ public sealed class GitHubReleaseUpdateService : IAppUpdateService, IDisposable
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
 
+        var totalBytes = response.Content.Headers.ContentLength;
+        progress?.Report(new UpdateDownloadProgress(0, totalBytes));
         await using (var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken))
         await using (var fileStream = new FileStream(installerPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            await contentStream.CopyToAsync(fileStream, cancellationToken);
+            var buffer = new byte[64 * 1024];
+            long downloaded = 0;
+            int read;
+            while ((read = await contentStream.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                downloaded += read;
+                progress?.Report(new UpdateDownloadProgress(downloaded, totalBytes));
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(update.DownloadSha256))

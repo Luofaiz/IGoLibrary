@@ -245,6 +245,7 @@ internal sealed class FakeAppUpdateService : IAppUpdateService
 
     public Task<AppUpdateInstallResult> InstallUpdateAsync(
         AppUpdateCheckResult update,
+        IProgress<UpdateDownloadProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         InstallCalls++;
