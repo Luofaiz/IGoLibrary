@@ -158,7 +158,7 @@ public sealed class MainWindowViewModelTests
 
         var titles = viewModel.SidebarItems.Select(item => item.Title).ToArray();
 
-        Assert.Equal(["首页", "账户与场馆", "使用指南"], titles);
+        Assert.Equal(["首页", "账户与场馆", "系统设置", "使用指南"], titles);
     }
 
     [Fact]
@@ -182,6 +182,19 @@ public sealed class MainWindowViewModelTests
 
         Assert.Equal(MainWindowViewModel.GuideTabIndex, viewModel.SelectedTabIndex);
         Assert.Equal("使用指南", viewModel.SelectedSidebarItem?.Title);
+    }
+
+    [Fact]
+    public void SystemSettings_RemainsAccessible_WhenUnauthorized()
+    {
+        var viewModel = CreateViewModel();
+
+        viewModel.IsAuthorized = true;
+        viewModel.IsAuthorized = false;
+        viewModel.SelectedSidebarItem = viewModel.SidebarItems.Single(item => item.Title == "系统设置");
+
+        Assert.Equal(6, viewModel.SelectedTabIndex);
+        Assert.Equal("系统设置", viewModel.SelectedSidebarItem?.Title);
     }
 
     [Fact]

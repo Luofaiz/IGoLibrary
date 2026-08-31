@@ -97,6 +97,7 @@ public partial class MainWindowViewModel(
     [
         HomeSidebarItem,
         AccountAndVenueSidebarItem,
+        SettingsSidebarItem,
         GuideSidebarItem
     ];
     private static readonly SidebarNavigationItem[] AuthorizedSidebarItems =
@@ -155,6 +156,7 @@ public partial class MainWindowViewModel(
     [
         HomeSidebarItem,
         AccountAndVenueSidebarItem,
+        SettingsSidebarItem,
         GuideSidebarItem
     ];
 
@@ -190,7 +192,7 @@ public partial class MainWindowViewModel(
 
     partial void OnSelectedTabIndexChanged(int value)
     {
-        if (!IsAuthorized && value > AccountAndVenueTabIndex && value != GuideTabIndex)
+        if (!IsAuthorized && value > AccountAndVenueTabIndex && value is not (SystemSettingsTabIndex or GuideTabIndex))
         {
             SelectedTabIndex = AccountAndVenueTabIndex;
             return;
@@ -810,7 +812,7 @@ public partial class MainWindowViewModel(
 
     partial void OnIsAuthorizedChanged(bool value)
     {
-        if (!value && SelectedTabIndex > AccountAndVenueTabIndex && SelectedTabIndex != GuideTabIndex)
+        if (!value && SelectedTabIndex > AccountAndVenueTabIndex && SelectedTabIndex is not (SystemSettingsTabIndex or GuideTabIndex))
         {
             SelectedTabIndex = AccountAndVenueTabIndex;
         }
