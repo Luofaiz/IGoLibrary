@@ -146,8 +146,6 @@ Windows 用户数据默认保存在：
 
 感谢原项目 [EJianZQ/IGoLibrary](https://github.com/EJianZQ/IGoLibrary) 提供的项目基础。
 
-感谢 Avalonia、.NET、SQLite 以及项目使用的其他开源组件。
-
 ## 许可证
 
 本项目基于 [MIT License](LICENSE.txt) 开源。
