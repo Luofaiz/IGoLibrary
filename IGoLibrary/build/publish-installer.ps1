@@ -30,20 +30,24 @@ if ($LASTEXITCODE -ne 0) {
     throw "Windows publish failed with exit code $LASTEXITCODE."
 }
 
-$iscc = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($null -eq $iscc) {
-    $candidatePaths = @(
-        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
-        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
-        "C:\Program Files\Inno Setup 6\ISCC.exe"
-    )
-    $isccPath = $candidatePaths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-} else {
-    $isccPath = $iscc.Source
+$candidatePaths = @(
+    "C:\Program Files\Inno Setup 7\ISCC.exe",
+    "C:\Program Files\Inno Setup 6\ISCC.exe",
+    "C:\Program Files (x86)\Inno Setup 7\ISCC.exe",
+    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe",
+    "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+)
+$isccPath = $candidatePaths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($isccPath)) {
+    $iscc = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $iscc) {
+        $isccPath = $iscc.Source
+    }
 }
 
 if ([string]::IsNullOrWhiteSpace($isccPath)) {
-    throw "Inno Setup 6 compiler was not found. Install it with: winget install --id JRSoftware.InnoSetup -e"
+    throw "Inno Setup compiler was not found. Install it with: winget install --id JRSoftware.InnoSetup -e"
 }
 
 & $isccPath "/DMyAppVersion=$Version" (Join-Path $root "build\IGoLibrary.iss")
