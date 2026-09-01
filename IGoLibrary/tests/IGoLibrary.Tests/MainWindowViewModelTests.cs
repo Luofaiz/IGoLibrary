@@ -1150,6 +1150,28 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task RefreshReservationAsync_AlsoRefreshesHomeUserInformation()
+    {
+        var sessionService = new FakeSessionService
+        {
+            CurrentSession = new SessionCredentials("cookie", SessionSource.ManualCookie, DateTimeOffset.Now, true)
+        };
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnGetCurrentUserNicknameAsync = (_, _) => Task.FromResult<string?>("小明"),
+            OnGetUserStatisticsAsync = (_, _) => Task.FromResult(new UserStatistics("8", "12小时", "3小时", "20"))
+        };
+        var viewModel = CreateViewModel(sessionService: sessionService, apiClient: apiClient);
+
+        await viewModel.RefreshReservationCommand.ExecuteAsync(null);
+
+        Assert.Equal("12小时", viewModel.HomeStudyTimeText);
+        Assert.Equal("8", viewModel.HomeRankText);
+        Assert.Equal("3小时", viewModel.HomeDayLongestText);
+        Assert.Equal("20", viewModel.HomeCreditText);
+    }
+
+    [Fact]
     public async Task CheckForUpdatesAsync_InstallsUpdate_WhenConfirmed()
     {
         var appUpdateService = new FakeAppUpdateService

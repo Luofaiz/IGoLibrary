@@ -1740,7 +1740,11 @@ public partial class MainWindowViewModel(
         IsRefreshingReservationRecords = true;
         try
         {
-            var records = await apiClient.GetReservationRecordsAsync(session.Cookie);
+            var recordsTask = apiClient.GetReservationRecordsAsync(session.Cookie);
+            var nicknameTask = RefreshHomeUserDisplayNameAsync(session.Cookie);
+            var statisticsTask = RefreshHomeUserStatisticsAsync(session.Cookie);
+            await Task.WhenAll(recordsTask, nicknameTask, statisticsTask);
+            var records = await recordsTask;
             UpdateReservationPresentation(records);
         }
         catch (Exception ex)

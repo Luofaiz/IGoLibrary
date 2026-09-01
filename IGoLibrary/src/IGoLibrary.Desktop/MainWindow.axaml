@@ -511,7 +511,7 @@
                                  VerticalAlignment="Center" />
 
                       <Button Grid.Column="1"
-                              Content="刷新预约记录"
+                              Content="刷新"
                               Classes="Secondary"
                               Command="{Binding RefreshReservationCommand}"
                               HorizontalContentAlignment="Center"
@@ -627,7 +627,7 @@
                                 MaxWidth="380"
                                 HorizontalAlignment="Center"
                                 TextAlignment="Center" />
-                    <Button Content="刷新预约记录"
+                    <Button Content="刷新"
                             Classes="Secondary"
                             Command="{Binding RefreshReservationCommand}"
                             HorizontalAlignment="Center"
@@ -1262,7 +1262,7 @@
                          Orientation="Horizontal"
                          HorizontalAlignment="Right"
                          VerticalAlignment="Bottom">
-                <Button Content="手动刷新"
+                <Button Content="刷新"
                         Command="{Binding RefreshReservationCommand}"
                         Classes="Secondary"
                         Margin="0,0,12,8"

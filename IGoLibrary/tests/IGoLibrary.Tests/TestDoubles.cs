@@ -23,6 +23,7 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
     public Func<string, CancellationToken, Task<ReservationInfo?>>? OnGetReservationInfoAsync { get; set; }
     public Func<string, CancellationToken, Task<IReadOnlyList<CommonSeat>>>? OnGetCommonSeatsAsync { get; set; }
     public Func<string, CancellationToken, Task<IReadOnlyList<ReservationRecord>>>? OnGetReservationRecordsAsync { get; set; }
+    public Func<string, CancellationToken, Task<UserStatistics>>? OnGetUserStatisticsAsync { get; set; }
     public Func<string, int, string, CancellationToken, Task<bool>>? OnReserveSeatAsync { get; set; }
     public Func<string, CancellationToken, Task>? OnRefreshPrereservePageAsync { get; set; }
     public Func<string, int, string, CancellationToken, Task<PrereserveSaveResult>>? OnSavePrereserveSeatAsync { get; set; }
@@ -115,7 +116,8 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
         => Task.FromResult(false);
 
     public Task<UserStatistics> GetUserStatisticsAsync(string cookie, CancellationToken cancellationToken = default)
-        => Task.FromResult(new UserStatistics("--", "--", "--", "--"));
+        => OnGetUserStatisticsAsync?.Invoke(cookie, cancellationToken)
+           ?? Task.FromResult(new UserStatistics("--", "--", "--", "--"));
 }
 
 internal sealed class FakeCredentialStore : ICredentialStore
