@@ -1749,10 +1749,23 @@ public partial class MainWindowViewModel(
         }
         catch (Exception ex)
         {
-            activityLogService.Write(LogEntryKind.Error, "Occupy", $"刷新预约状态失败：{ex.Message}");
-            if (showNotificationOnError)
+            if (CookieExpiryDetector.IsKnownExpiredCookieException(ex, session.Cookie))
             {
-                await notificationService.ShowWarningAsync("刷新预约状态失败", ex.Message);
+                IsAuthorized = false;
+                SessionSummary = "登录已失效，请重新授权";
+                activityLogService.Write(LogEntryKind.Warning, "Auth", $"刷新时发现 Cookie 已失效：{ex.Message}");
+                if (showNotificationOnError)
+                {
+                    await notificationService.ShowWarningAsync("登录已失效", "当前 Cookie 已过期或被公众号拒绝，请重新获取微信授权链接。");
+                }
+            }
+            else
+            {
+                activityLogService.Write(LogEntryKind.Error, "Occupy", $"刷新预约状态失败：{ex.Message}");
+                if (showNotificationOnError)
+                {
+                    await notificationService.ShowWarningAsync("刷新预约状态失败", ex.Message);
+                }
             }
         }
         finally
@@ -3387,7 +3400,6 @@ public partial class MainWindowViewModel(
         }
         catch (Exception ex)
         {
-            HomeStudyTimeText = HomeRankText = HomeDayLongestText = HomeCreditText = "--";
             activityLogService.Write(LogEntryKind.Warning, "Statistics", $"读取个人统计失败：{ex.Message}");
         }
     }
