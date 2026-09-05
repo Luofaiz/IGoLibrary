@@ -2095,9 +2095,7 @@ public partial class MainWindowViewModel(
 
     private static bool TryParseDailyCheckoutTime(string? value, out TimeSpan checkoutTime)
     {
-        checkoutTime = default;
-        return TimeSpan.TryParseExact(value?.Trim(), [@"hh\:mm", @"h\:mm"], CultureInfo.InvariantCulture, out checkoutTime) &&
-               checkoutTime >= TimeSpan.Zero && checkoutTime < TimeSpan.FromDays(1);
+        return DailyCheckoutSchedulePolicy.TryParseTime(value, out checkoutTime);
     }
 
     [RelayCommand]

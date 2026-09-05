@@ -112,7 +112,9 @@ public sealed class WindowsDailyCheckoutTaskScheduler : IDailyCheckoutTaskSchedu
                     new XElement(ns + "DisallowStartIfOnBatteries", "false"),
                     new XElement(ns + "StopIfGoingOnBatteries", "false"),
                     new XElement(ns + "AllowHardTerminate", "true"),
-                    new XElement(ns + "StartWhenAvailable", "true"),
+                    // A shutdown can interrupt Task Scheduler before it persists the
+                    // completed run. Do not replay an old daily trigger on the next boot.
+                    new XElement(ns + "StartWhenAvailable", "false"),
                     new XElement(ns + "RunOnlyIfNetworkAvailable", "true"),
                     new XElement(ns + "AllowStartOnDemand", "true"),
                     new XElement(ns + "Enabled", "true"),

@@ -2,6 +2,7 @@ using Avalonia;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using IGoLibrary.Application.Abstractions;
+using IGoLibrary.Desktop.Services;
 using IGoLibrary.Infrastructure.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -97,6 +98,36 @@ internal static class Program
     private static async Task RunScheduledCheckoutAsync(IServiceProvider services, IAppLogWriter logWriter)
     {
         await services.GetRequiredService<IAppDataInitializer>().InitializeAsync();
+        var settings = await services.GetRequiredService<ISettingsService>().LoadAsync();
+        if (!settings.DailyCheckoutEnabled)
+        {
+            logWriter.Write(LogLevel.Information, "DailyCheckout", "跳过每日自动退座：应用设置未启用。");
+            Environment.ExitCode = 0;
+            return;
+        }
+
+        if (!DailyCheckoutSchedulePolicy.TryParseTime(settings.DailyCheckoutTime, out var checkoutTime))
+        {
+            logWriter.Write(
+                LogLevel.Warning,
+                "DailyCheckout",
+                $"跳过每日自动退座：设置中的退座时间无效（{settings.DailyCheckoutTime}）。");
+            Environment.ExitCode = 0;
+            return;
+        }
+
+        var now = DateTimeOffset.Now;
+        if (!DailyCheckoutSchedulePolicy.IsWithinExecutionWindow(checkoutTime, now))
+        {
+            logWriter.Write(
+                LogLevel.Information,
+                "DailyCheckout",
+                $"跳过过期的每日自动退座触发：当前时间 {now:yyyy-MM-dd HH:mm:ss zzz}，" +
+                $"计划时间 {checkoutTime:hh\\:mm}，允许延迟 {DailyCheckoutSchedulePolicy.LateStartTolerance.TotalMinutes:0} 分钟。");
+            Environment.ExitCode = 0;
+            return;
+        }
+
         var result = await services.GetRequiredService<IDailyCheckoutService>().RunAsync();
         if (result.Succeeded)
         {
@@ -112,7 +143,6 @@ internal static class Program
         logWriter.Write(LogLevel.Error, "DailyCheckout", result.Message);
         try
         {
-            var settings = await services.GetRequiredService<ISettingsService>().LoadAsync();
             var emailSettings = settings.CookieExpiryAlerts?.Email;
             if (emailSettings is { Enabled: true })
             {
