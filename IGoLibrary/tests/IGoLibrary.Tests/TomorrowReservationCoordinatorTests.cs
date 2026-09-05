@@ -444,6 +444,181 @@ public sealed class TomorrowReservationCoordinatorTests
     }
 
     [Fact]
+    public async Task StartAsync_WaitsForQueueReadyBeforeSubmittingAfterHandshakeRefresh()
+    {
+        var handshakeSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowQueueReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var submitSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var validateCalls = 0;
+        var saveCalls = 0;
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnValidateCookieAsync = (_, _) =>
+            {
+                validateCalls++;
+                return Task.CompletedTask;
+            },
+            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnSavePrereserveSeatAsync = (cookie, _, _, _) =>
+            {
+                saveCalls++;
+                submitSeen.TrySetResult();
+                return Task.FromResult(new PrereserveSaveResult(true, cookie));
+            }
+        };
+        var queueClient = new FakePrereserveQueueClient
+        {
+            OnRunAsync = async (onMessageAsync, cancellationToken) =>
+            {
+                await onMessageAsync(new PrereserveQueueMessage("prereserve/queue", string.Empty, 0, 1, string.Empty), cancellationToken);
+                handshakeSeen.TrySetResult();
+                await allowQueueReady.Task.WaitAsync(cancellationToken);
+                await onMessageAsync(new PrereserveQueueMessage(
+                    "prereserve/queue",
+                    "排队成功！请在2分钟内选择座位，否则需要重新排队。",
+                    0,
+                    0,
+                    string.Empty), cancellationToken);
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+        };
+        var coordinator = CreateCoordinator(apiClient, queueClient, new FakeTaskAlertService());
+
+        await coordinator.StartAsync(CreatePlan());
+        await handshakeSeen.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await Task.Delay(100);
+
+        Assert.Equal(1, validateCalls);
+        Assert.Equal(0, saveCalls);
+
+        allowQueueReady.SetResult();
+        await submitSeen.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await coordinator.StopAsync();
+
+        Assert.Equal(1, saveCalls);
+    }
+
+    [Fact]
+    public async Task StartAsync_DoesNotSubmitBeforeScheduledWindowWhilePreheating()
+    {
+        var submitSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var saveCalls = 0;
+        var scheduledStart = DateTimeOffset.Now.AddMilliseconds(1500);
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnSavePrereserveSeatAsync = (cookie, _, _, _) =>
+            {
+                saveCalls++;
+                submitSeen.TrySetResult();
+                return Task.FromResult(new PrereserveSaveResult(true, cookie));
+            }
+        };
+        var coordinator = CreateCoordinator(apiClient, CreateReadyQueueClient(), new FakeTaskAlertService());
+
+        await coordinator.StartAsync(CreatePlan(scheduledStart: TimeOnly.FromDateTime(scheduledStart.LocalDateTime)));
+        await Task.Delay(300);
+
+        Assert.Equal(0, saveCalls);
+
+        await submitSeen.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await coordinator.StopAsync();
+
+        Assert.Equal(1, saveCalls);
+    }
+
+    [Fact]
+    public async Task StartAsync_UsesPriorityOrderFromFirstSeatEveryCycle()
+    {
+        var submittedSeatKeys = new List<string>();
+        var firstSeatSecondCycleSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var activityLog = new ActivityLogService();
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnSavePrereserveSeatAsync = (cookie, _, seatKey, _) =>
+            {
+                submittedSeatKeys.Add(seatKey);
+                if (submittedSeatKeys.Count <= 2)
+                {
+                    throw new TraceIntApiException("服务器繁忙，请稍后重试", 1, "服务器繁忙，请稍后重试");
+                }
+
+                if (seatKey == "first")
+                {
+                    firstSeatSecondCycleSeen.TrySetResult();
+                }
+
+                return Task.FromResult(new PrereserveSaveResult(true, cookie));
+            }
+        };
+        var coordinator = CreateCoordinator(apiClient, CreateReadyQueueClient(), new FakeTaskAlertService(), activityLog);
+
+        await coordinator.StartAsync(CreatePlan(
+        [
+            new TrackedSeat("first", "A124"),
+            new TrackedSeat("second", "A210")
+        ]));
+        await firstSeatSecondCycleSeen.Task.WaitAsync(TimeSpan.FromSeconds(3));
+        await coordinator.StopAsync();
+
+        Assert.Equal(["first", "second", "first"], submittedSeatKeys.Take(3).ToArray());
+        Assert.Contains(activityLog.Entries, entry =>
+            entry.Category == "Grab" &&
+            entry.Message.Contains("服务端忙碌", StringComparison.Ordinal) &&
+            entry.Message.Contains("code=1", StringComparison.Ordinal) &&
+            entry.Message.Contains("服务器繁忙", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task StartAsync_WaitsForSuccessConfirmationBeforeTryingNextSelectedSeat()
+    {
+        var submittedSeatKeys = new List<string>();
+        var firstSubmitSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnSavePrereserveSeatAsync = (cookie, _, seatKey, _) =>
+            {
+                submittedSeatKeys.Add(seatKey);
+                firstSubmitSeen.TrySetResult();
+                return Task.FromResult(new PrereserveSaveResult(true, cookie));
+            }
+        };
+        var queueClient = new FakePrereserveQueueClient
+        {
+            OnRunAsync = async (onMessageAsync, cancellationToken) =>
+            {
+                await onMessageAsync(new PrereserveQueueMessage(
+                    "prereserve/queue",
+                    "排队成功！请在2分钟内选择座位，否则需要重新排队。",
+                    0,
+                    0,
+                    string.Empty), cancellationToken);
+                await firstSubmitSeen.Task.WaitAsync(cancellationToken);
+                await Task.Delay(100, cancellationToken);
+                await onMessageAsync(new PrereserveQueueMessage(
+                    "prereserve/queue",
+                    "你已经成功登记了明天的 自科阅览区 A124",
+                    0,
+                    0,
+                    string.Empty), cancellationToken);
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+        };
+        var coordinator = CreateCoordinator(apiClient, queueClient, new FakeTaskAlertService());
+
+        await coordinator.StartAsync(CreatePlan(
+        [
+            new TrackedSeat("first", "A124"),
+            new TrackedSeat("second", "A210")
+        ]));
+        await WaitForAsync(() => coordinator.GetStatus().State == CoordinatorTaskState.Completed);
+
+        Assert.Equal(["first"], submittedSeatKeys);
+    }
+
+    [Fact]
     public async Task StartAsync_CancelsQueueSession_WhenUnexpectedFailureStopsTask()
     {
         var queueCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -485,7 +660,8 @@ public sealed class TomorrowReservationCoordinatorTests
     private static TomorrowReservationCoordinator CreateCoordinator(
         FakeTraceIntApiClient apiClient,
         FakePrereserveQueueClient queueClient,
-        FakeTaskAlertService alerts)
+        FakeTaskAlertService alerts,
+        ActivityLogService? activityLogService = null)
     {
         var runtimeState = new AppRuntimeState
         {
@@ -496,7 +672,7 @@ public sealed class TomorrowReservationCoordinatorTests
             apiClient,
             queueClient,
             alerts,
-            new ActivityLogService(),
+            activityLogService ?? new ActivityLogService(),
             runtimeState);
     }
 
@@ -517,12 +693,15 @@ public sealed class TomorrowReservationCoordinatorTests
         };
     }
 
-    private static TomorrowReservationPlan CreatePlan()
+    private static TomorrowReservationPlan CreatePlan(
+        IReadOnlyList<TrackedSeat>? seats = null,
+        TimeOnly? scheduledStart = null)
     {
+        var targetSeats = seats ?? [new TrackedSeat("selected", "225")];
         return new TomorrowReservationPlan(
             117580,
             "自科阅览区",
-            [new TrackedSeat("selected", "225")],
+            targetSeats,
             GrabMode.Aggressive,
             new GrabSeatPollingStrategy(
                 TimeSpan.FromMilliseconds(10),
@@ -530,6 +709,22 @@ public sealed class TomorrowReservationCoordinatorTests
                 50,
                 TimeSpan.FromMilliseconds(10),
                 TimeSpan.FromMilliseconds(10)),
-            null);
+            scheduledStart);
+    }
+
+    private static async Task WaitForAsync(Func<bool> predicate)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (predicate())
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException("Condition was not met within the expected time.");
     }
 }
