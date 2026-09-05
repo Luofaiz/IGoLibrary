@@ -1046,6 +1046,28 @@
                                                FontSize="12"
                                                FontWeight="SemiBold"
                                                Foreground="{DynamicResource SemiAccentBrush}" />
+                                    <Button Content="↑"
+                                            Command="{Binding DataContext.MoveSelectedSeatUpCommand, ElementName=MainWindowRoot}"
+                                            CommandParameter="{Binding .}"
+                                            Classes="chip-close"
+                                            IsEnabled="{Binding DataContext.CanMoveSelectedSeatOrder, ElementName=MainWindowRoot}"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Foreground="{DynamicResource SemiAccentBrush}"
+                                            FontSize="11"
+                                            FontWeight="Bold"
+                                            VerticalAlignment="Center" />
+                                    <Button Content="↓"
+                                            Command="{Binding DataContext.MoveSelectedSeatDownCommand, ElementName=MainWindowRoot}"
+                                            CommandParameter="{Binding .}"
+                                            Classes="chip-close"
+                                            IsEnabled="{Binding DataContext.CanMoveSelectedSeatOrder, ElementName=MainWindowRoot}"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Foreground="{DynamicResource SemiAccentBrush}"
+                                            FontSize="11"
+                                            FontWeight="Bold"
+                                            VerticalAlignment="Center" />
                                     <Button Content="✕"
                                             Command="{Binding DataContext.RemoveSelectedSeatCommand, ElementName=MainWindowRoot}"
                                             CommandParameter="{Binding .}"
@@ -2102,9 +2124,77 @@
                       BorderThickness="1"
                       CornerRadius="18"
                       Padding="16">
-                <Grid>
+                <Grid RowDefinitions="Auto,*"
+                      RowSpacing="12">
+                  <Border Background="{DynamicResource AppOverlaySurfaceStrongBrush}"
+                          BorderBrush="{DynamicResource SemiCardBorderBrush}"
+                          BorderThickness="1"
+                          CornerRadius="14"
+                          Padding="12"
+                          IsVisible="{Binding HasDraftSelectedSeats}">
+                    <ItemsControl ItemsSource="{Binding DraftSelectedSeats}">
+                      <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                          <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                      </ItemsControl.ItemsPanel>
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Border Margin="0,0,8,8"
+                                  Padding="10,6"
+                                  CornerRadius="999"
+                                  Background="{DynamicResource SemiAccentSoftBrush}"
+                                  BorderBrush="{DynamicResource SemiCardBorderBrush}"
+                                  BorderThickness="1">
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="8">
+                              <TextBlock Text="{Binding SeatName}"
+                                         FontSize="12"
+                                         FontWeight="SemiBold"
+                                         Foreground="{DynamicResource SemiAccentBrush}" />
+                              <Button Content="↑"
+                                      Command="{Binding DataContext.MoveDraftSelectedSeatUpCommand, ElementName=MainWindowRoot}"
+                                      CommandParameter="{Binding .}"
+                                      Classes="chip-close"
+                                      IsEnabled="{Binding DataContext.CanMoveDraftSelectedSeatOrder, ElementName=MainWindowRoot}"
+                                      Background="Transparent"
+                                      BorderThickness="0"
+                                      Foreground="{DynamicResource SemiAccentBrush}"
+                                      FontSize="11"
+                                      FontWeight="Bold"
+                                      VerticalAlignment="Center" />
+                              <Button Content="↓"
+                                      Command="{Binding DataContext.MoveDraftSelectedSeatDownCommand, ElementName=MainWindowRoot}"
+                                      CommandParameter="{Binding .}"
+                                      Classes="chip-close"
+                                      IsEnabled="{Binding DataContext.CanMoveDraftSelectedSeatOrder, ElementName=MainWindowRoot}"
+                                      Background="Transparent"
+                                      BorderThickness="0"
+                                      Foreground="{DynamicResource SemiAccentBrush}"
+                                      FontSize="11"
+                                      FontWeight="Bold"
+                                      VerticalAlignment="Center" />
+                              <Button Content="✕"
+                                      Command="{Binding DataContext.RemoveDraftSelectedSeatCommand, ElementName=MainWindowRoot}"
+                                      CommandParameter="{Binding .}"
+                                      Classes="chip-close"
+                                      IsEnabled="{Binding DataContext.CanEditGrabConfiguration, ElementName=MainWindowRoot}"
+                                      Background="Transparent"
+                                      BorderThickness="0"
+                                      Foreground="{DynamicResource SemiAccentBrush}"
+                                      FontSize="11"
+                                      FontWeight="Bold"
+                                      VerticalAlignment="Center" />
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Border>
+
                   <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                                 VerticalScrollBarVisibility="Auto"
+                                Grid.Row="1"
                                 IsVisible="{Binding HasSeatLayout}">
                     <ItemsControl ItemsSource="{Binding VisibleSeats}">
                       <ItemsControl.ItemsPanel>

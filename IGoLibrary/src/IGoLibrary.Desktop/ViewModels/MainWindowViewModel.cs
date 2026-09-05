@@ -127,8 +127,8 @@ public partial class MainWindowViewModel(
     private const double NotificationSegmentControlWidthValue = 396d;
     private const double NotificationSegmentSliderWidthValue = 190d;
     private const double NotificationSegmentSliderOffsetValue = 196d;
-    private readonly HashSet<string> _committedSelectedSeatKeys = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _draftSelectedSeatKeys = new(StringComparer.Ordinal);
+    private readonly List<string> _committedSelectedSeatKeys = [];
+    private readonly List<string> _draftSelectedSeatKeys = [];
     private bool _isSynchronizingSeatSelection;
     private CoordinatorTaskState _grabTaskState = CoordinatorTaskState.Idle;
     private DateTimeOffset? _grabLastRequestAt;
@@ -163,6 +163,8 @@ public partial class MainWindowViewModel(
     public ObservableCollection<SeatItemViewModel> VisibleSeats { get; } = [];
 
     public ObservableCollection<TrackedSeat> SelectedSeats { get; } = [];
+
+    public ObservableCollection<TrackedSeat> DraftSelectedSeats { get; } = [];
 
     public ObservableCollection<LogLineViewModel> OccupyLogLines { get; } = [];
 
@@ -645,6 +647,14 @@ public partial class MainWindowViewModel(
     public bool CanEditGrabReservationStrategy => CanEditGrabConfiguration && IsTodayGrabTarget;
 
     public int DraftSelectedSeatCount => _draftSelectedSeatKeys.Count;
+
+    public bool HasDraftSelectedSeats => DraftSelectedSeatCount > 0;
+
+    public bool HasNoDraftSelectedSeats => !HasDraftSelectedSeats;
+
+    public bool CanMoveSelectedSeatOrder => CanEditGrabConfiguration && SelectedSeatCount > 1;
+
+    public bool CanMoveDraftSelectedSeatOrder => CanEditGrabConfiguration && DraftSelectedSeatCount > 1;
 
     public bool HasVisibleSeatResults => VisibleSeatResultCount > 0;
 
@@ -1489,7 +1499,7 @@ public partial class MainWindowViewModel(
             return;
         }
 
-        if (!_committedSelectedSeatKeys.Remove(seat.SeatKey))
+        if (!RemoveSelectionKey(_committedSelectedSeatKeys, seat.SeatKey))
         {
             return;
         }
@@ -1499,6 +1509,47 @@ public partial class MainWindowViewModel(
         {
             ApplySelectionToSeatItems(_committedSelectedSeatKeys);
         }
+    }
+
+    [RelayCommand]
+    private void MoveSelectedSeatUp(TrackedSeat? seat)
+    {
+        MoveSelectedSeat(_committedSelectedSeatKeys, seat, -1, RefreshSelectedSeatsPresentation);
+    }
+
+    [RelayCommand]
+    private void MoveSelectedSeatDown(TrackedSeat? seat)
+    {
+        MoveSelectedSeat(_committedSelectedSeatKeys, seat, 1, RefreshSelectedSeatsPresentation);
+    }
+
+    [RelayCommand]
+    private void RemoveDraftSelectedSeat(TrackedSeat? seat)
+    {
+        if (seat is null || !CanEditGrabConfiguration)
+        {
+            return;
+        }
+
+        if (!RemoveSelectionKey(_draftSelectedSeatKeys, seat.SeatKey))
+        {
+            return;
+        }
+
+        ApplySelectionToSeatItems(_draftSelectedSeatKeys);
+        UpdateDraftSelectionPresentation();
+    }
+
+    [RelayCommand]
+    private void MoveDraftSelectedSeatUp(TrackedSeat? seat)
+    {
+        MoveSelectedSeat(_draftSelectedSeatKeys, seat, -1, UpdateDraftSelectionPresentation);
+    }
+
+    [RelayCommand]
+    private void MoveDraftSelectedSeatDown(TrackedSeat? seat)
+    {
+        MoveSelectedSeat(_draftSelectedSeatKeys, seat, 1, UpdateDraftSelectionPresentation);
     }
 
     [RelayCommand]
@@ -2651,6 +2702,20 @@ public partial class MainWindowViewModel(
             return;
         }
 
+        if (sender is SeatItemViewModel seatItem)
+        {
+            if (IsGrabSeatSelectionOverlayOpen)
+            {
+                UpdateSelectionKey(_draftSelectedSeatKeys, seatItem);
+                UpdateDraftSelectionPresentation();
+                return;
+            }
+
+            UpdateSelectionKey(_committedSelectedSeatKeys, seatItem);
+            RefreshSelectedSeatsPresentation();
+            return;
+        }
+
         if (IsGrabSeatSelectionOverlayOpen)
         {
             RefreshDraftSelectionFromCurrentItems();
@@ -2688,22 +2753,14 @@ public partial class MainWindowViewModel(
 
     private void RefreshDraftSelectionFromCurrentItems()
     {
-        _draftSelectedSeatKeys.Clear();
-        foreach (var seatKey in EnumerateSelectedSeats().Select(seat => seat.SeatKey))
-        {
-            _draftSelectedSeatKeys.Add(seatKey);
-        }
+        SyncSelectionKeysFromCurrentItems(_draftSelectedSeatKeys);
 
         UpdateDraftSelectionPresentation();
     }
 
     private void RefreshCommittedSelectionFromCurrentItems()
     {
-        _committedSelectedSeatKeys.Clear();
-        foreach (var seatKey in EnumerateSelectedSeats().Select(seat => seat.SeatKey))
-        {
-            _committedSelectedSeatKeys.Add(seatKey);
-        }
+        SyncSelectionKeysFromCurrentItems(_committedSelectedSeatKeys);
 
         RefreshSelectedSeatsPresentation();
     }
@@ -2719,14 +2776,88 @@ public partial class MainWindowViewModel(
         OnPropertyChanged(nameof(SelectedSeatCount));
         OnPropertyChanged(nameof(HasSelectedSeats));
         OnPropertyChanged(nameof(HasNoSelectedSeats));
+        OnPropertyChanged(nameof(CanMoveSelectedSeatOrder));
         OnPropertyChanged(nameof(SelectedSeatSummaryText));
         OnPropertyChanged(nameof(SelectedSeatHintText));
     }
 
     private void UpdateDraftSelectionPresentation()
     {
+        DraftSelectedSeats.Clear();
+        foreach (var seat in EnumerateSelectedSeats(_draftSelectedSeatKeys))
+        {
+            DraftSelectedSeats.Add(seat);
+        }
+
         OnPropertyChanged(nameof(DraftSelectedSeatCount));
+        OnPropertyChanged(nameof(HasDraftSelectedSeats));
+        OnPropertyChanged(nameof(HasNoDraftSelectedSeats));
+        OnPropertyChanged(nameof(CanMoveDraftSelectedSeatOrder));
         OnPropertyChanged(nameof(DraftSelectedSeatSummaryText));
+    }
+
+    private void UpdateSelectionKey(List<string> selectedSeatKeys, SeatItemViewModel seat)
+    {
+        if (seat.IsSelected)
+        {
+            AddSelectionKey(selectedSeatKeys, seat.SeatKey);
+        }
+        else
+        {
+            RemoveSelectionKey(selectedSeatKeys, seat.SeatKey);
+        }
+    }
+
+    private void SyncSelectionKeysFromCurrentItems(List<string> selectedSeatKeys)
+    {
+        var currentSelectedKeys = _allSeats
+            .Where(seat => seat.IsSelected)
+            .Select(seat => seat.SeatKey)
+            .ToHashSet(StringComparer.Ordinal);
+
+        selectedSeatKeys.RemoveAll(seatKey => !currentSelectedKeys.Contains(seatKey));
+        foreach (var seat in _allSeats.Where(seat => seat.IsSelected))
+        {
+            AddSelectionKey(selectedSeatKeys, seat.SeatKey);
+        }
+    }
+
+    private static void AddSelectionKey(List<string> selectedSeatKeys, string seatKey)
+    {
+        if (!selectedSeatKeys.Contains(seatKey, StringComparer.Ordinal))
+        {
+            selectedSeatKeys.Add(seatKey);
+        }
+    }
+
+    private static bool RemoveSelectionKey(List<string> selectedSeatKeys, string seatKey)
+    {
+        var index = selectedSeatKeys.FindIndex(key => string.Equals(key, seatKey, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            return false;
+        }
+
+        selectedSeatKeys.RemoveAt(index);
+        return true;
+    }
+
+    private void MoveSelectedSeat(List<string> selectedSeatKeys, TrackedSeat? seat, int offset, Action refresh)
+    {
+        if (seat is null || !CanEditGrabConfiguration)
+        {
+            return;
+        }
+
+        var index = selectedSeatKeys.FindIndex(key => string.Equals(key, seat.SeatKey, StringComparison.Ordinal));
+        var targetIndex = index + offset;
+        if (index < 0 || targetIndex < 0 || targetIndex >= selectedSeatKeys.Count)
+        {
+            return;
+        }
+
+        (selectedSeatKeys[index], selectedSeatKeys[targetIndex]) = (selectedSeatKeys[targetIndex], selectedSeatKeys[index]);
+        refresh();
     }
 
     private void ApplySelectionToSeatItems(IEnumerable<string> selectedSeatKeys)
@@ -2753,13 +2884,18 @@ public partial class MainWindowViewModel(
 
     private IEnumerable<TrackedSeat> EnumerateSelectedSeats(IEnumerable<string> selectedSeatKeys)
     {
-        var selectedKeySet = selectedSeatKeys.ToHashSet(StringComparer.Ordinal);
+        var seatsByKey = _allSeats
+            .GroupBy(seat => seat.SeatKey, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var yieldedSeatKeys = new HashSet<string>(StringComparer.Ordinal);
 
-        return _allSeats
-            .Where(seat => selectedKeySet.Contains(seat.SeatKey))
-            .OrderBy(seat => int.TryParse(seat.SeatName, out var number) ? number : int.MaxValue)
-            .ThenBy(seat => seat.SeatName, StringComparer.OrdinalIgnoreCase)
-            .Select(seat => new TrackedSeat(seat.SeatKey, seat.SeatName));
+        foreach (var seatKey in selectedSeatKeys)
+        {
+            if (yieldedSeatKeys.Add(seatKey) && seatsByKey.TryGetValue(seatKey, out var seat))
+            {
+                yield return new TrackedSeat(seat.SeatKey, seat.SeatName);
+            }
+        }
     }
 
     private void ApplyFavoriteStates(IEnumerable<string> favoriteSeatKeys, bool syncSelection)

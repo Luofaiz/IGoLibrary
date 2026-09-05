@@ -624,6 +624,98 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task StartGrabAsync_UsesUserSelectedSeatOrder()
+    {
+        var library = new LibrarySummary(10, "自科阅览区", "3", true, 120, 10, 0);
+        var libraryService = new FakeLibraryService
+        {
+            LibrariesToLoad = [library]
+        };
+        libraryService.LayoutsByLibraryId[library.LibraryId] = new LibraryLayout(
+            library.LibraryId,
+            library.Name,
+            library.Floor,
+            library.IsOpen,
+            120,
+            0,
+            10,
+            [
+                new SeatSnapshot("a124", "A124", false, 0, 0),
+                new SeatSnapshot("a210", "A210", false, 0, 0),
+                new SeatSnapshot("a612", "A612", false, 0, 0)
+            ]);
+        var grabCoordinator = new FakeGrabSeatCoordinator();
+        var viewModel = CreateViewModel(
+            libraryService: libraryService,
+            apiClient: new FakeTraceIntApiClient
+            {
+                OnGetLibraryRuleAsync = (_, _, _) => Task.FromResult(new LibraryRule(
+                    library.LibraryId,
+                    "1小时",
+                    "30",
+                    "30",
+                    "0",
+                    "{}",
+                    null,
+                    null,
+                    0,
+                    "07:30",
+                    0,
+                    "22:00",
+                    -1))
+            },
+            grabSeatCoordinator: grabCoordinator);
+
+        viewModel.IsAuthorized = true;
+        viewModel.SelectedLibrary = library;
+        await viewModel.BindSelectedLibraryCommand.ExecuteAsync(null);
+        viewModel.VisibleSeats[2].IsSelected = true;
+        viewModel.VisibleSeats[0].IsSelected = true;
+        viewModel.VisibleSeats[1].IsSelected = true;
+
+        await viewModel.StartGrabCommand.ExecuteAsync(null);
+
+        var plan = Assert.IsType<GrabSeatPlan>(grabCoordinator.StartedPlan);
+        Assert.Equal(["A612", "A124", "A210"], plan.Seats.Select(seat => seat.SeatName).ToArray());
+    }
+
+    [Fact]
+    public async Task MoveSelectedSeatCommands_ReorderCommittedSelection()
+    {
+        var library = new LibrarySummary(10, "自科阅览区", "3", true, 120, 10, 0);
+        var libraryService = new FakeLibraryService
+        {
+            LibrariesToLoad = [library]
+        };
+        libraryService.LayoutsByLibraryId[library.LibraryId] = new LibraryLayout(
+            library.LibraryId,
+            library.Name,
+            library.Floor,
+            library.IsOpen,
+            120,
+            0,
+            10,
+            [
+                new SeatSnapshot("a124", "A124", false, 0, 0),
+                new SeatSnapshot("a210", "A210", false, 0, 0),
+                new SeatSnapshot("a612", "A612", false, 0, 0)
+            ]);
+        var viewModel = CreateViewModel(libraryService: libraryService);
+
+        viewModel.IsAuthorized = true;
+        viewModel.SelectedLibrary = library;
+        await viewModel.BindSelectedLibraryCommand.ExecuteAsync(null);
+        viewModel.VisibleSeats[0].IsSelected = true;
+        viewModel.VisibleSeats[1].IsSelected = true;
+        viewModel.VisibleSeats[2].IsSelected = true;
+
+        viewModel.MoveSelectedSeatUpCommand.Execute(viewModel.SelectedSeats[2]);
+        viewModel.MoveSelectedSeatUpCommand.Execute(viewModel.SelectedSeats[1]);
+
+        Assert.Equal(["A612", "A124", "A210"], viewModel.SelectedSeats.Select(seat => seat.SeatName).ToArray());
+    }
+
+    [Fact]
     public async Task StartRandomAvailableSeatGrabAsync_StartsGrabCoordinatorWithoutSelectedSeats()
     {
         var library = new LibrarySummary(10, "library", "3", true, 120, 10, 0);
