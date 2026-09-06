@@ -25,6 +25,8 @@ public sealed class TomorrowReservationCoordinator(
     private static readonly TimeSpan SubmittedConfirmationMaximumWait = TimeSpan.FromMilliseconds(1000);
     private static readonly TimeSpan BusyRetryJitterMinimum = TimeSpan.FromMilliseconds(80);
     private static readonly TimeSpan BusyRetryJitterMaximum = TimeSpan.FromMilliseconds(180);
+    private static readonly TimeSpan PreSubmitWarmupMinimumLeadTime = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan SubmissionWindowPollInterval = TimeSpan.FromMilliseconds(50);
 
     public event EventHandler<CoordinatorStatus>? StatusChanged;
 
@@ -100,25 +102,39 @@ public sealed class TomorrowReservationCoordinator(
             var scheduledStart = plan.ScheduledStart is null
                 ? (DateTimeOffset?)null
                 : ResolveNextScheduledStart(plan.ScheduledStart.Value, DateTimeOffset.Now);
+            var cycle = 0;
+            var requestCount = 0;
+            DateTimeOffset? lastRequestAt = null;
+            var random = new Random();
+
+            void MarkRequestSent()
+            {
+                requestCount++;
+                lastRequestAt = DateTimeOffset.Now;
+                UpdateRunningMetrics(
+                    cycle == 0 ? "明日预约排队预热中。" : "明日预约请求循环运行中。",
+                    cycle,
+                    requestCount,
+                    lastRequestAt);
+            }
 
             if (scheduledStart is not null)
             {
+                await LogServerTimeCalibrationAsync(cancellationToken);
                 await WaitUntilQueuePreheatAsync(scheduledStart.Value, cancellationToken);
             }
 
             var cookie = GetCurrentCookieOrThrow();
             var reservationSucceeded = new TaskCompletionSource<TrackedSeat>(TaskCreationOptions.RunContinuationsAsynchronously);
             queueSession = await StartQueueSessionAsync(cookie, reservationSucceeded, scheduledStart, cancellationToken);
+            cookie = GetCurrentCookieOrThrow();
+            await WarmUpPrereservePageAsync(cookie, scheduledStart, MarkRequestSent, cancellationToken);
+            cookie = GetCurrentCookieOrThrow();
 
             if (scheduledStart is not null)
             {
                 await WaitUntilSubmissionWindowAsync(scheduledStart.Value, cancellationToken);
             }
-
-            var cycle = 0;
-            var requestCount = 0;
-            DateTimeOffset? lastRequestAt = null;
-            var random = new Random();
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -126,18 +142,8 @@ public sealed class TomorrowReservationCoordinator(
                 UpdateRunningMetrics("明日预约请求循环运行中。", cycle, requestCount, lastRequestAt);
                 cookie = GetCurrentCookieOrThrow();
 
-                void MarkRequestSent()
-                {
-                    requestCount++;
-                    lastRequestAt = DateTimeOffset.Now;
-                    UpdateRunningMetrics("明日预约请求循环运行中。", cycle, requestCount, lastRequestAt);
-                }
-
-                MarkRequestSent();
-                await apiClient.RefreshPrereservePageAsync(cookie, cancellationToken);
-                cookie = GetCurrentCookieOrThrow();
-
                 var attemptedSeatKeys = new HashSet<string>(StringComparer.Ordinal);
+                var submittedSeatTokens = new HashSet<string>(StringComparer.Ordinal);
                 var selectedSeatAccepted = false;
                 var selectedSeatRetryRequested = false;
                 var queueRefreshRequested = false;
@@ -158,6 +164,7 @@ public sealed class TomorrowReservationCoordinator(
                     if (outcome == TomorrowSeatSubmitOutcome.Submitted)
                     {
                         selectedSeatAccepted = true;
+                        AddSeatMatchTokens(submittedSeatTokens, seat);
                     }
                     else if (outcome == TomorrowSeatSubmitOutcome.RetryLater)
                     {
@@ -193,6 +200,7 @@ public sealed class TomorrowReservationCoordinator(
                         cookie,
                         plan,
                         attemptedSeatKeys,
+                        submittedSeatTokens,
                         random,
                         MarkRequestSent,
                         reservationSucceeded.Task,
@@ -210,6 +218,22 @@ public sealed class TomorrowReservationCoordinator(
                     var reservedSeat = reservationSucceeded.Task.Result;
                     await CompleteSuccessfullyAsync(plan, reservedSeat, cancellationToken);
                     return;
+                }
+
+                if (submittedSeatTokens.Count > 0)
+                {
+                    cookie = GetCurrentCookieOrThrow();
+                    var confirmedSeat = await TryConfirmSubmittedReservationFromRecordsAsync(
+                        cookie,
+                        plan,
+                        submittedSeatTokens,
+                        MarkRequestSent,
+                        cancellationToken);
+                    if (confirmedSeat is not null)
+                    {
+                        await CompleteSuccessfullyAsync(plan, confirmedSeat, cancellationToken);
+                        return;
+                    }
                 }
 
                 var delay = RandomBetween(plan.PollingStrategy.MinimumDelay, plan.PollingStrategy.MaximumDelay, random);
@@ -300,6 +324,7 @@ public sealed class TomorrowReservationCoordinator(
         string cookie,
         TomorrowReservationPlan plan,
         HashSet<string> attemptedSeatKeys,
+        HashSet<string> submittedSeatTokens,
         Random random,
         Action markRequestSent,
         Task<TrackedSeat> reservationSucceeded,
@@ -343,6 +368,11 @@ public sealed class TomorrowReservationCoordinator(
             if (reservationSucceeded.IsCompletedSuccessfully ||
                 outcome is TomorrowSeatSubmitOutcome.Submitted or TomorrowSeatSubmitOutcome.RetryLater or TomorrowSeatSubmitOutcome.QueueRequired)
             {
+                if (outcome == TomorrowSeatSubmitOutcome.Submitted)
+                {
+                    AddSeatMatchTokens(submittedSeatTokens, fallbackSeat);
+                }
+
                 return outcome;
             }
 
@@ -397,6 +427,83 @@ public sealed class TomorrowReservationCoordinator(
 
         Shuffle(candidates, random);
         return candidates;
+    }
+
+    private async Task WarmUpPrereservePageAsync(
+        string cookie,
+        DateTimeOffset? scheduledStart,
+        Action markRequestSent,
+        CancellationToken cancellationToken)
+    {
+        if (scheduledStart is null)
+        {
+            return;
+        }
+
+        var remaining = scheduledStart.Value - DateTimeOffset.Now;
+        if (remaining <= TimeSpan.Zero)
+        {
+            activityLogService.Write(LogEntryKind.Info, "Grab", "明日预约已到正式提交窗口，跳过预热刷新，直接提交优先座位。");
+            return;
+        }
+
+        if (remaining < PreSubmitWarmupMinimumLeadTime)
+        {
+            activityLogService.Write(
+                LogEntryKind.Info,
+                "Grab",
+                $"距离明日预约正式窗口仅剩 {remaining.TotalMilliseconds:0}ms，跳过预热刷新，优先保证第一发提交。");
+            return;
+        }
+
+        try
+        {
+            markRequestSent();
+            await apiClient.RefreshPrereservePageAsync(cookie, cancellationToken);
+            activityLogService.Write(LogEntryKind.Info, "Grab", "明日预约正式窗口前预热完成，后续循环不再每轮刷新页面。");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约预热刷新失败，继续等待提交窗口：{ex.Message}");
+        }
+    }
+
+    private async Task<TrackedSeat?> TryConfirmSubmittedReservationFromRecordsAsync(
+        string cookie,
+        TomorrowReservationPlan plan,
+        HashSet<string> submittedSeatTokens,
+        Action markRequestSent,
+        CancellationToken cancellationToken)
+    {
+        activityLogService.Write(LogEntryKind.Info, "Grab", "本轮已有明日预约请求提交但未收到 websocket 成功确认，正在查询明日预约记录做一次确认。");
+        try
+        {
+            markRequestSent();
+            var records = await apiClient.GetTomorrowReservationRecordsAsync(cookie, cancellationToken);
+            runtimeState.ReservationRecords = MergeTomorrowReservationRecords(runtimeState.ReservationRecords, records);
+
+            var record = records.FirstOrDefault(candidate =>
+                candidate.Kind == ReservationRecordKind.Tomorrow &&
+                candidate.LibraryId == plan.LibraryId &&
+                (ContainsSeatMatchToken(submittedSeatTokens, candidate.SeatKey) ||
+                 ContainsSeatMatchToken(submittedSeatTokens, candidate.SeatName)));
+            if (record is null)
+            {
+                activityLogService.Write(LogEntryKind.Info, "Grab", "明日预约记录暂未确认本轮已提交座位，继续下一轮优先顺序快速抢。");
+                return null;
+            }
+
+            var seat = new TrackedSeat(
+                string.IsNullOrWhiteSpace(record.SeatKey) ? record.SeatName : record.SeatKey,
+                string.IsNullOrWhiteSpace(record.SeatName) ? record.SeatKey : record.SeatName);
+            activityLogService.Write(LogEntryKind.Success, "Grab", $"明日预约记录已确认成功：{seat.SeatName}。");
+            return seat;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            activityLogService.Write(LogEntryKind.Warning, "Grab", $"查询明日预约记录确认失败，继续下一轮优先顺序快速抢：{ex.Message}");
+            return null;
+        }
     }
 
     private async Task HandleQueueMessageAsync(
@@ -603,7 +710,34 @@ public sealed class TomorrowReservationCoordinator(
             }
 
             SetRunning("明日预约排队预热中。");
-            await Task.Delay(remaining < TimeSpan.FromMilliseconds(200) ? remaining : TimeSpan.FromMilliseconds(200), cancellationToken);
+            await Task.Delay(remaining < SubmissionWindowPollInterval ? remaining : SubmissionWindowPollInterval, cancellationToken);
+        }
+    }
+
+    private async Task LogServerTimeCalibrationAsync(CancellationToken cancellationToken)
+    {
+        var localBefore = DateTimeOffset.Now;
+        try
+        {
+            var serverTime = await apiClient.GetTraceIntServerTimeAsync(cancellationToken);
+            var localAfter = DateTimeOffset.Now;
+            if (serverTime is null)
+            {
+                activityLogService.Write(LogEntryKind.Warning, "Grab", "明日预约服务器时间校准失败：服务端响应未包含 Date/getTime 时间。");
+                return;
+            }
+
+            var localSample = localBefore + TimeSpan.FromTicks((localAfter - localBefore).Ticks / 2);
+            var serverLocalTime = serverTime.Value.ToLocalTime();
+            var skew = serverLocalTime - localSample;
+            activityLogService.Write(
+                LogEntryKind.Info,
+                "Grab",
+                $"明日预约服务器时间校准：本地 {localSample:yyyy-MM-dd HH:mm:ss.fff zzz}，服务端 Date/getTime {serverLocalTime:yyyy-MM-dd HH:mm:ss.fff zzz}，偏差 {FormatTimeSkew(skew)}，采样耗时 {(localAfter - localBefore).TotalMilliseconds:0}ms。");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约服务器时间校准失败：{ex.Message}");
         }
     }
 
@@ -662,6 +796,54 @@ public sealed class TomorrowReservationCoordinator(
             var swapIndex = random.Next(index + 1);
             (items[index], items[swapIndex]) = (items[swapIndex], items[index]);
         }
+    }
+
+    private static void AddSeatMatchTokens(HashSet<string> tokens, TrackedSeat seat)
+    {
+        AddSeatMatchToken(tokens, seat.SeatKey);
+        AddSeatMatchToken(tokens, seat.SeatName);
+    }
+
+    private static void AddSeatMatchToken(HashSet<string> tokens, string value)
+    {
+        var normalized = NormalizeSeatMatchToken(value);
+        if (!string.IsNullOrWhiteSpace(normalized))
+        {
+            tokens.Add(normalized);
+        }
+    }
+
+    private static bool ContainsSeatMatchToken(HashSet<string> tokens, string value)
+    {
+        var normalized = NormalizeSeatMatchToken(value);
+        return !string.IsNullOrWhiteSpace(normalized) && tokens.Contains(normalized);
+    }
+
+    private static string NormalizeSeatMatchToken(string value)
+    {
+        var normalized = value.Trim();
+        while (normalized.EndsWith(".", StringComparison.Ordinal))
+        {
+            normalized = normalized[..^1].TrimEnd();
+        }
+
+        return normalized;
+    }
+
+    private static string FormatTimeSkew(TimeSpan skew)
+    {
+        var sign = skew < TimeSpan.Zero ? "-" : "+";
+        return $"{sign}{skew.Duration().TotalMilliseconds:0}ms";
+    }
+
+    private static IReadOnlyList<ReservationRecord> MergeTomorrowReservationRecords(
+        IReadOnlyList<ReservationRecord> currentRecords,
+        IReadOnlyList<ReservationRecord> tomorrowRecords)
+    {
+        return currentRecords
+            .Where(record => record.Kind != ReservationRecordKind.Tomorrow)
+            .Concat(tomorrowRecords)
+            .ToArray();
     }
 
     private static bool TryGetExpectedPrereserveMiss(Exception exception, out TomorrowSeatMiss miss)

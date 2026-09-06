@@ -26,6 +26,10 @@ public interface ITraceIntApiClient
 
     Task<IReadOnlyList<ReservationRecord>> GetReservationRecordsAsync(string cookie, CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<ReservationRecord>> GetTomorrowReservationRecordsAsync(string cookie, CancellationToken cancellationToken = default);
+
+    Task<DateTimeOffset?> GetTraceIntServerTimeAsync(CancellationToken cancellationToken = default);
+
     Task<bool> ReserveSeatAsync(string cookie, int libraryId, string seatKey, CancellationToken cancellationToken = default);
 
     Task RefreshPrereservePageAsync(string cookie, CancellationToken cancellationToken = default);

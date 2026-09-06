@@ -127,6 +127,43 @@ public sealed class TraceIntApiClientTests
     }
 
     [Fact]
+    public async Task GetTraceIntServerTimeAsync_ReturnsServerDateHeader()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        var serverTime = new DateTimeOffset(2026, 9, 5, 20, 10, 0, TimeSpan.Zero);
+        var handler = new SequenceHttpMessageHandler(
+            (request, _) =>
+            {
+                capturedRequest = request;
+                var response = new HttpResponseMessage(HttpStatusCode.OK);
+                response.Headers.Date = serverTime;
+                return Task.FromResult(response);
+            });
+
+        var client = new TraceIntApiClient(
+            new HttpClient(handler)
+            {
+                Timeout = Timeout.InfiniteTimeSpan
+            },
+            new FakeProtocolTemplateStore(new ProtocolTemplateSet(
+                "https://example.com/ReplaceMeByCode",
+                "{\"query\":\"libraries\"}",
+                "{\"query\":\"layout\"}",
+                "{\"query\":\"rule\"}",
+                "{\"query\":\"reservation\"}",
+                "{\"query\":\"reserve\"}",
+                "{\"query\":\"cancel\"}")),
+            new FakeSettingsService(AppSettings.Default with { RetryCount = 0 }));
+
+        var actual = await client.GetTraceIntServerTimeAsync();
+
+        Assert.Equal(serverTime, actual);
+        Assert.NotNull(capturedRequest);
+        Assert.Equal(HttpMethod.Head, capturedRequest.Method);
+        Assert.Equal("wechat.v2.traceint.com", capturedRequest.Headers.Host);
+    }
+
+    [Fact]
     public async Task GetLibraryRuleAsync_ParsesRulePayload()
     {
         var handler = new SequenceHttpMessageHandler(
@@ -763,7 +800,7 @@ public sealed class TraceIntApiClientTests
     }
 
     [Fact]
-    public async Task GetLibrariesAsync_Persists_WhenResponseOnlyUpdatesServerId()
+    public async Task GetLibrariesAsync_UpdatesRuntimeOnly_WhenResponseOnlyUpdatesServerId()
     {
         var runtimeState = new AppRuntimeState
         {
@@ -808,8 +845,8 @@ public sealed class TraceIntApiClientTests
         await client.GetLibrariesAsync("Authorization=old-token; SERVERID=old-server");
 
         Assert.Equal("Authorization=old-token; SERVERID=new-server", runtimeState.Session.Cookie);
-        Assert.Equal(1, credentialStore.SaveCalls);
-        Assert.Equal(runtimeState.Session, credentialStore.StoredSession);
+        Assert.Equal(0, credentialStore.SaveCalls);
+        Assert.Null(credentialStore.StoredSession);
     }
 
     [Fact]

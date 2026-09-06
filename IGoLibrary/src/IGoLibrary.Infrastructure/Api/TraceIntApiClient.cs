@@ -24,6 +24,7 @@ public sealed class TraceIntApiClient(
     private readonly TraceIntRequestPolicy _requestPolicy = requestPolicy ?? new TraceIntRequestPolicy(settingsService);
     private readonly TraceIntGraphQlTransport _graphQlTransport = graphQlTransport ?? new TraceIntGraphQlTransport(httpClient, requestPolicy ?? new TraceIntRequestPolicy(settingsService));
     private static readonly TimeSpan GetCookieTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ServerTimeCalibrationTimeout = TimeSpan.FromSeconds(2);
     private readonly SemaphoreSlim _cookieUpdateGate = new(1, 1);
 
     public async Task<string> GetCookieFromCodeAsync(string code, CancellationToken cancellationToken = default)
@@ -430,6 +431,36 @@ public sealed class TraceIntApiClient(
             .ToArray();
     }
 
+    public async Task<DateTimeOffset?> GetTraceIntServerTimeAsync(CancellationToken cancellationToken = default)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(ServerTimeCalibrationTimeout);
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Head, "https://wechat.v2.traceint.com/")
+            {
+                Version = HttpVersion.Version11,
+                VersionPolicy = HttpVersionPolicy.RequestVersionOrLower
+            };
+            request.Headers.Host = "wechat.v2.traceint.com";
+            request.Headers.TryAddWithoutValidation("Connection", "keep-alive");
+            request.Headers.TryAddWithoutValidation(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+
+            using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
+            return response.Headers.Date;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     public async Task<bool> ReserveSeatAsync(string cookie, int libraryId, string seatKey, CancellationToken cancellationToken = default)
     {
         var templates = await protocolTemplateStore.GetEffectiveTemplatesAsync(cancellationToken);
@@ -585,9 +616,9 @@ public sealed class TraceIntApiClient(
         return response;
     }
 
-    private async Task<IReadOnlyList<ReservationRecord>> GetTomorrowReservationRecordsAsync(
+    public async Task<IReadOnlyList<ReservationRecord>> GetTomorrowReservationRecordsAsync(
         string cookie,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         const string prereservePayload = """{"operationName":"prereserve","query":"query prereserve {\n userAuth {\n prereserve {\n prereserve {\n day\n lib_id\n seat_key\n seat_name\n is_used\n user_mobile\n id\n lib_name\n }\n }\n }\n}"}""";
 
@@ -846,7 +877,7 @@ public sealed class TraceIntApiClient(
         HttpResponseMessage response,
         CancellationToken cancellationToken)
     {
-        if (runtimeState is null || credentialStore is null)
+        if (runtimeState is null)
         {
             return;
         }
@@ -880,14 +911,24 @@ public sealed class TraceIntApiClient(
                 return;
             }
 
+            var authorizationChanged =
+                ContainsCookieName(responseCookies, "Authorization") &&
+                TryGetCookieValue(updatedCookie, "Authorization", out var updatedAuthorization) &&
+                !string.Equals(updatedAuthorization, currentAuthorization, StringComparison.Ordinal);
+
             var updatedSession = currentSession with
             {
                 Cookie = updatedCookie,
-                SavedAt = DateTimeOffset.Now
+                SavedAt = authorizationChanged ? DateTimeOffset.Now : currentSession.SavedAt
             };
 
             runtimeState.Session = updatedSession;
-            if (updatedSession.CanAutoRestore)
+            if (!authorizationChanged)
+            {
+                return;
+            }
+
+            if (updatedSession.CanAutoRestore && credentialStore is not null)
             {
                 await credentialStore.SaveSessionAsync(updatedSession, cancellationToken);
             }

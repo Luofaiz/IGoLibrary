@@ -8,9 +8,12 @@ namespace IGoLibrary.Infrastructure.Api;
 
 public sealed class PrereserveQueueClient : IPrereserveQueueClient
 {
-    private const string QueueUri = "ws://wechat.v2.traceint.com/ws?ns=prereserve/queue";
+    internal const string QueueUri = "wss://wechat.v2.traceint.com/ws?ns=prereserve/queue";
+    internal const string QueueOrigin = "https://web.traceint.com";
+    internal const string TomorrowReservationUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090719) XWEB/8391 Flue";
+    internal const string TomorrowReservationAppVersion = "2.2.5";
+    internal static readonly TimeSpan KeepAliveInterval = TimeSpan.FromMilliseconds(250);
     private const string ClientPayload = """{"ns":"prereserve/queue","msg":""}""";
-    private const string MobileWechatUserAgent = "Mozilla/5.0 (Linux; Android 10; TAS-AL00 Build/HUAWEITAS-AL00; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/107.0.5304.141 Mobile Safari/537.36 XWEB/5043 MMWEBSDK/20221109 MMWEBID/6856 MicroMessenger/8.0.31.2281(0x28001F59) WeChat/arm64 Weixin NetType/WIFI Language/zh_CN ABI/arm64";
 
     public async Task RunAsync(
         string cookie,
@@ -18,8 +21,9 @@ public sealed class PrereserveQueueClient : IPrereserveQueueClient
         CancellationToken cancellationToken = default)
     {
         using var socket = new ClientWebSocket();
-        socket.Options.SetRequestHeader("User-Agent", MobileWechatUserAgent);
-        socket.Options.SetRequestHeader("App-Version", "2.0.14");
+        socket.Options.SetRequestHeader("User-Agent", TomorrowReservationUserAgent);
+        socket.Options.SetRequestHeader("Origin", QueueOrigin);
+        socket.Options.SetRequestHeader("App-Version", TomorrowReservationAppVersion);
         socket.Options.SetRequestHeader("Cookie", cookie);
 
         await socket.ConnectAsync(new Uri(QueueUri), cancellationToken);
@@ -99,7 +103,7 @@ public sealed class PrereserveQueueClient : IPrereserveQueueClient
 
             var payload = Encoding.UTF8.GetBytes(ClientPayload);
             await socket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken);
-            await Task.Delay(TimeSpan.FromMilliseconds(800), cancellationToken);
+            await Task.Delay(KeepAliveInterval, cancellationToken);
         }
     }
 

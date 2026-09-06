@@ -23,6 +23,8 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
     public Func<string, CancellationToken, Task<ReservationInfo?>>? OnGetReservationInfoAsync { get; set; }
     public Func<string, CancellationToken, Task<IReadOnlyList<CommonSeat>>>? OnGetCommonSeatsAsync { get; set; }
     public Func<string, CancellationToken, Task<IReadOnlyList<ReservationRecord>>>? OnGetReservationRecordsAsync { get; set; }
+    public Func<string, CancellationToken, Task<IReadOnlyList<ReservationRecord>>>? OnGetTomorrowReservationRecordsAsync { get; set; }
+    public Func<CancellationToken, Task<DateTimeOffset?>>? OnGetTraceIntServerTimeAsync { get; set; }
     public Func<string, CancellationToken, Task<UserStatistics>>? OnGetUserStatisticsAsync { get; set; }
     public Func<string, int, string, CancellationToken, Task<bool>>? OnReserveSeatAsync { get; set; }
     public Func<string, CancellationToken, Task>? OnRefreshPrereservePageAsync { get; set; }
@@ -89,6 +91,12 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
                     IsCheckedIn: info.IsCheckedIn)
             ];
     }
+
+    public Task<IReadOnlyList<ReservationRecord>> GetTomorrowReservationRecordsAsync(string cookie, CancellationToken cancellationToken = default)
+        => OnGetTomorrowReservationRecordsAsync?.Invoke(cookie, cancellationToken) ?? Task.FromResult<IReadOnlyList<ReservationRecord>>([]);
+
+    public Task<DateTimeOffset?> GetTraceIntServerTimeAsync(CancellationToken cancellationToken = default)
+        => OnGetTraceIntServerTimeAsync?.Invoke(cancellationToken) ?? Task.FromResult<DateTimeOffset?>(null);
 
     public Task<bool> ReserveSeatAsync(string cookie, int libraryId, string seatKey, CancellationToken cancellationToken = default)
         => OnReserveSeatAsync?.Invoke(cookie, libraryId, seatKey, cancellationToken) ?? Task.FromResult(false);
