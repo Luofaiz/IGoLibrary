@@ -858,6 +858,19 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void TomorrowReservationSuccess_IsRecognizedAsHistoricalSuccess()
+    {
+        var status = new CoordinatorStatus(
+            CoordinatorTaskState.Completed,
+            "明日预约",
+            "已成功预约明日目标座位。",
+            DateTimeOffset.Now.AddSeconds(-1),
+            DateTimeOffset.Now);
+
+        Assert.True(MainWindowViewModel.IsSuccessfulReservationCompletion(status));
+    }
+
+    [Fact]
     public async Task SaveSettingsAsync_PersistsThemePreferences()
     {
         var settingsService = new FakeSettingsService(AppSettings.Default);

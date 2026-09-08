@@ -3440,8 +3440,7 @@ public partial class MainWindowViewModel(
 
     private void TryRecordGrabSuccess(CoordinatorStatus status)
     {
-        if (status.State != CoordinatorTaskState.Completed ||
-            status.Message != "已成功预约到目标座位。")
+        if (!IsSuccessfulReservationCompletion(status))
         {
             return;
         }
@@ -3454,6 +3453,12 @@ public partial class MainWindowViewModel(
 
         _lastRecordedGrabSuccessAt = recordedAt;
         _ = RecordSuccessfulReservationAsync();
+    }
+
+    internal static bool IsSuccessfulReservationCompletion(CoordinatorStatus status)
+    {
+        return status.State == CoordinatorTaskState.Completed &&
+               status.Message is "已成功预约到目标座位。" or "已成功预约明日目标座位。";
     }
 
     private void TryRecordOccupySuccess(DateTimeOffset timestamp)
