@@ -44,6 +44,7 @@ public partial class MainWindowViewModel(
     private IReadOnlyList<ReservationRecord> _reservationRecords = [];
     private readonly object _filterGate = new();
     private readonly DispatcherTimer _reservationCountdownTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private const int MaxDisplayedLogCharacters = 100_000;
     private CancellationTokenSource? _filteringCts;
     private ReservationInfo? _currentReservation;
     private DateTimeOffset? _sidebarCookieExpirationTime;
@@ -2985,15 +2986,15 @@ public partial class MainWindowViewModel(
         Dispatcher.UIThread.Post(() =>
         {
             var line = $"[{entry.Timestamp:HH:mm:ss}] {entry.Category}: {entry.Message}";
-            AllLogsText = AppendLine(AllLogsText, line);
+            AllLogsText = AppendDisplayedLogLine(AllLogsText, line);
             if (entry.Category is "Grab" or "Library" or "Favorite" or "Auth")
             {
-                GrabLogsText = AppendLine(GrabLogsText, line);
+                GrabLogsText = AppendDisplayedLogLine(GrabLogsText, line);
             }
 
             if (entry.Category is "Occupy" or "Auth")
             {
-                OccupyLogsText = AppendLine(OccupyLogsText, line);
+                OccupyLogsText = AppendDisplayedLogLine(OccupyLogsText, line);
                 if (OccupyLogLines.Count > 0)
                 {
                     OccupyLogLines[^1].IsLatest = false;
@@ -3889,11 +3890,22 @@ public partial class MainWindowViewModel(
         ReservationCountdownText = $"倒计时：{countdown}";
     }
 
-    private static string AppendLine(string current, string line)
+    internal static string AppendDisplayedLogLine(string current, string line)
     {
         var builder = new StringBuilder(current);
         builder.AppendLine(line);
-        return builder.ToString();
+
+        if (builder.Length <= MaxDisplayedLogCharacters)
+        {
+            return builder.ToString();
+        }
+
+        var text = builder.ToString();
+        var start = text.Length - MaxDisplayedLogCharacters;
+        var firstCompleteLine = text.IndexOf('\n', start);
+        return firstCompleteLine >= 0 && firstCompleteLine < text.Length - 1
+            ? text[(firstCompleteLine + 1)..]
+            : text[start..];
     }
 
     private static bool IsTaskActive(CoordinatorStatus status)

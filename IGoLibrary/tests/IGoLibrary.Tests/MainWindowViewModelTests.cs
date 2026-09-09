@@ -871,6 +871,17 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public void DisplayedLogText_IsBoundedToPreventUiGrowth()
+    {
+        var current = new string('x', 100_000);
+
+        var result = MainWindowViewModel.AppendDisplayedLogLine(current, "latest log");
+
+        Assert.True(result.Length <= 100_000);
+        Assert.Contains("latest log", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SaveSettingsAsync_PersistsThemePreferences()
     {
         var settingsService = new FakeSettingsService(AppSettings.Default);
