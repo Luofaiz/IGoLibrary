@@ -1601,6 +1601,34 @@ public partial class MainWindowViewModel(
     }
 
     [RelayCommand]
+    private async Task RemoveFavoritesAsync()
+    {
+        if (SelectedLibrary is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var selectedSeatKeys = _allSeats
+                .Where(x => x.IsSelected)
+                .Select(x => x.SeatKey)
+                .ToHashSet(StringComparer.Ordinal);
+            var existing = await libraryService.GetFavoritesAsync(SelectedLibrary.LibraryId);
+            var remaining = existing
+                .Where(x => !selectedSeatKeys.Contains(x.SeatKey))
+                .ToList();
+            await libraryService.SaveFavoritesAsync(SelectedLibrary.LibraryId, remaining);
+            ApplyFavoriteStates(remaining.Select(x => x.SeatKey), syncSelection: false);
+        }
+        catch (Exception ex)
+        {
+            activityLogService.Write(LogEntryKind.Error, "Favorite", $"取消收藏失败：{ex.Message}");
+            await notificationService.ShowWarningAsync("取消收藏失败", ex.Message);
+        }
+    }
+
+    [RelayCommand]
     private async Task LoadFavoritesAsync()
     {
         if (SelectedLibrary is null)
@@ -1611,29 +1639,8 @@ public partial class MainWindowViewModel(
         try
         {
             var localFavorites = await libraryService.GetFavoritesAsync(SelectedLibrary.LibraryId);
-            IReadOnlyList<CommonSeat> commonSeats;
-            try
-            {
-                commonSeats = await libraryService.GetCommonSeatsAsync();
-            }
-            catch (Exception ex)
-            {
-                commonSeats = [];
-                activityLogService.Write(LogEntryKind.Warning, "Favorite", $"读取公众号常用座位失败，保留本地收藏：{ex.Message}");
-            }
-
-            var remoteFavorites = commonSeats
-                .Where(x => x.LibraryId == SelectedLibrary.LibraryId)
-                .Select(x => new TrackedSeat(x.SeatKey, ResolveSeatName(x.SeatKey, x.SeatName)))
-                .ToList();
-            var merged = MergeTrackedSeats(localFavorites, remoteFavorites);
-            if (!merged.SequenceEqual(localFavorites))
-            {
-                await libraryService.SaveFavoritesAsync(SelectedLibrary.LibraryId, merged);
-            }
-
-            ApplyFavoriteStates(merged.Select(x => x.SeatKey), syncSelection: false);
-            await notificationService.ShowInfoAsync("收藏已加载", $"已加载 {merged.Count} 个收藏座位。");
+            ApplyFavoriteStates(localFavorites.Select(x => x.SeatKey), syncSelection: false);
+            await notificationService.ShowInfoAsync("收藏已加载", $"已加载 {localFavorites.Count} 个收藏座位。");
         }
         catch (Exception ex)
         {
@@ -3318,10 +3325,6 @@ public partial class MainWindowViewModel(
             ? FormatStudyElapsed(_currentReservation.StudyElapsedSeconds)
             : FormatReservationRemaining(remaining);
     }
-
-    private string ResolveSeatName(string seatKey, string fallback)
-        => _allSeats.FirstOrDefault(x => x.SeatKey == seatKey)?.SeatName
-           ?? (string.IsNullOrWhiteSpace(fallback) ? seatKey : fallback);
 
     private static List<TrackedSeat> MergeTrackedSeats(IEnumerable<TrackedSeat> local, IEnumerable<TrackedSeat> additions)
     {

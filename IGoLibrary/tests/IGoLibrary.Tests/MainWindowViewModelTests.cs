@@ -716,6 +716,46 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task RemoveFavoritesAsync_RemovesOnlySelectedFavoriteSeats()
+    {
+        var library = new LibrarySummary(10, "自科阅览区", "3", true, 120, 10, 0);
+        var libraryService = new FakeLibraryService
+        {
+            LibrariesToLoad = [library]
+        };
+        libraryService.LayoutsByLibraryId[library.LibraryId] = new LibraryLayout(
+            library.LibraryId,
+            library.Name,
+            library.Floor,
+            library.IsOpen,
+            120,
+            0,
+            10,
+            [
+                new SeatSnapshot("a210", "A210", false, 0, 0),
+                new SeatSnapshot("a612", "A612", false, 0, 0)
+            ]);
+        libraryService.FavoritesByLibraryId[library.LibraryId] =
+        [
+            new TrackedSeat("a210", "A210"),
+            new TrackedSeat("a612", "A612")
+        ];
+        var viewModel = CreateViewModel(libraryService: libraryService);
+
+        viewModel.IsAuthorized = true;
+        viewModel.SelectedLibrary = library;
+        await viewModel.BindSelectedLibraryCommand.ExecuteAsync(null);
+        viewModel.VisibleSeats.Single(x => x.SeatKey == "a210").IsSelected = true;
+
+        await viewModel.RemoveFavoritesCommand.ExecuteAsync(null);
+
+        var remaining = Assert.Single(libraryService.FavoritesByLibraryId[library.LibraryId]);
+        Assert.Equal("a612", remaining.SeatKey);
+        Assert.False(viewModel.VisibleSeats.Single(x => x.SeatKey == "a210").IsFavorite);
+        Assert.True(viewModel.VisibleSeats.Single(x => x.SeatKey == "a612").IsFavorite);
+    }
+
+    [Fact]
     public async Task StartRandomAvailableSeatGrabAsync_StartsGrabCoordinatorWithoutSelectedSeats()
     {
         var library = new LibrarySummary(10, "library", "3", true, 120, 10, 0);
