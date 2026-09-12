@@ -716,6 +716,51 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task ConfirmGrabSeatSelection_CommitsDraftOrderToGrabPlan()
+    {
+        var library = new LibrarySummary(10, "自科阅览区", "3", true, 120, 10, 0);
+        var libraryService = new FakeLibraryService
+        {
+            LibrariesToLoad = [library]
+        };
+        libraryService.LayoutsByLibraryId[library.LibraryId] = new LibraryLayout(
+            library.LibraryId,
+            library.Name,
+            library.Floor,
+            library.IsOpen,
+            120,
+            0,
+            10,
+            [
+                new SeatSnapshot("a124", "A124", false, 0, 0),
+                new SeatSnapshot("a210", "A210", false, 0, 0),
+                new SeatSnapshot("a612", "A612", false, 0, 0)
+            ]);
+        var grabCoordinator = new FakeGrabSeatCoordinator();
+        var viewModel = CreateViewModel(
+            libraryService: libraryService,
+            grabSeatCoordinator: grabCoordinator);
+
+        viewModel.IsAuthorized = true;
+        viewModel.SelectedLibrary = library;
+        await viewModel.BindSelectedLibraryCommand.ExecuteAsync(null);
+        viewModel.VisibleSeats[0].IsSelected = true;
+        viewModel.VisibleSeats[1].IsSelected = true;
+        viewModel.VisibleSeats[2].IsSelected = true;
+
+        await viewModel.OpenGrabSeatSelectionOverlayCommand.ExecuteAsync(null);
+        viewModel.MoveDraftSelectedSeatUpCommand.Execute(viewModel.DraftSelectedSeats[2]);
+        viewModel.MoveDraftSelectedSeatUpCommand.Execute(viewModel.DraftSelectedSeats[1]);
+        viewModel.ConfirmGrabSeatSelectionCommand.Execute(null);
+
+        Assert.Equal(["A612", "A124", "A210"], viewModel.SelectedSeats.Select(seat => seat.SeatName).ToArray());
+        await viewModel.StartGrabCommand.ExecuteAsync(null);
+
+        var plan = Assert.IsType<GrabSeatPlan>(grabCoordinator.StartedPlan);
+        Assert.Equal(["A612", "A124", "A210"], plan.Seats.Select(seat => seat.SeatName).ToArray());
+    }
+
+    [Fact]
     public async Task RemoveFavoritesAsync_RemovesOnlySelectedFavoriteSeats()
     {
         var library = new LibrarySummary(10, "自科阅览区", "3", true, 120, 10, 0);

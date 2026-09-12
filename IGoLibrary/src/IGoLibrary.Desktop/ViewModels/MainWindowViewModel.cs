@@ -2764,7 +2764,10 @@ public partial class MainWindowViewModel(
 
     private void CommitGrabSeatSelection()
     {
-        RefreshCommittedSelectionFromCurrentItems();
+        SyncSelectionKeysFromCurrentItems(_draftSelectedSeatKeys);
+        _committedSelectedSeatKeys.Clear();
+        _committedSelectedSeatKeys.AddRange(_draftSelectedSeatKeys);
+        RefreshSelectedSeatsPresentation();
         _draftSelectedSeatKeys.Clear();
         UpdateDraftSelectionPresentation();
     }
