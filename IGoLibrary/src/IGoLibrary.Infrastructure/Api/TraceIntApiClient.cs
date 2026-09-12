@@ -620,7 +620,7 @@ public sealed class TraceIntApiClient(
         string cookie,
         CancellationToken cancellationToken = default)
     {
-        const string prereservePayload = """{"operationName":"prereserve","query":"query prereserve {\n userAuth {\n prereserve {\n prereserve {\n day\n lib_id\n seat_key\n seat_name\n is_used\n user_mobile\n id\n lib_name\n }\n }\n }\n}"}""";
+        const string prereservePayload = """{"operationName":"prereserve","query":"query prereserve {\n userAuth {\n prereserve {\n prereserve {\n day\n lib_id\n lib_floor\n seat_key\n seat_name\n is_used\n user_mobile\n id\n lib_name\n }\n }\n }\n}"}""";
 
         using var response = await SendGraphQlAsync(cookie, prereservePayload, cancellationToken, usePrereserveHeaders: true);
         var raw = await response.Content.ReadAsStringAsync(cancellationToken);

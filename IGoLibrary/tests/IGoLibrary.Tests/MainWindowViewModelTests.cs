@@ -1061,7 +1061,8 @@ public sealed class MainWindowViewModelTests
                     "seat-4",
                     "4",
                     DateTimeOffset.Now.AddMinutes(30),
-                    DateOnly.FromDateTime(DateTime.Now)),
+                    DateOnly.FromDateTime(DateTime.Now),
+                    LibraryFloor: "3"),
                 new ReservationRecord(
                     ReservationRecordKind.Tomorrow,
                     "tomorrow-token",
@@ -1070,7 +1071,8 @@ public sealed class MainWindowViewModelTests
                     "seat-8",
                     "8",
                     null,
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(1)))
+                    DateOnly.FromDateTime(DateTime.Now.AddDays(1)),
+                    LibraryFloor: "5")
             ]),
             OnCancelReservationAsync = (_, _, _) => Task.FromResult(true)
         };
@@ -1086,7 +1088,7 @@ public sealed class MainWindowViewModelTests
         Assert.True(viewModel.HasNoCurrentReservation);
         Assert.Single(viewModel.HomeReservationRecords);
         Assert.Equal("明日预约", viewModel.HomeReservationRecords[0].KindText);
-        Assert.Equal("社科阅览室", viewModel.HomeReservationRecords[0].VenueText);
+        Assert.Equal("社科阅览室（5楼）", viewModel.HomeReservationRecords[0].VenueText);
         Assert.Single(confirmationDialogService.Requests);
     }
 
@@ -1110,7 +1112,8 @@ public sealed class MainWindowViewModelTests
                     "seat-4",
                     "4",
                     DateTimeOffset.Now.AddMinutes(30),
-                    DateOnly.FromDateTime(DateTime.Now)),
+                    DateOnly.FromDateTime(DateTime.Now),
+                    LibraryFloor: "3"),
                 new ReservationRecord(
                     ReservationRecordKind.Tomorrow,
                     "tomorrow-token",
@@ -1119,7 +1122,8 @@ public sealed class MainWindowViewModelTests
                     "seat-8",
                     "8",
                     null,
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(1)))
+                    DateOnly.FromDateTime(DateTime.Now.AddDays(1)),
+                    LibraryFloor: "5")
             ]),
             OnCancelReservationAsync = (_, token, _) =>
             {
@@ -1319,7 +1323,8 @@ public sealed class MainWindowViewModelTests
                     "seat-4",
                     "4",
                     DateTimeOffset.Now.AddMinutes(30),
-                    DateOnly.FromDateTime(DateTime.Now)),
+                    DateOnly.FromDateTime(DateTime.Now),
+                    LibraryFloor: "3"),
                 new ReservationRecord(
                     ReservationRecordKind.Tomorrow,
                     "tomorrow-token",
@@ -1328,7 +1333,8 @@ public sealed class MainWindowViewModelTests
                     "seat-8",
                     "8",
                     null,
-                    DateOnly.FromDateTime(DateTime.Now.AddDays(1)))
+                    DateOnly.FromDateTime(DateTime.Now.AddDays(1)),
+                    LibraryFloor: "5")
             ])
         };
         var viewModel = CreateViewModel(
@@ -1339,8 +1345,9 @@ public sealed class MainWindowViewModelTests
 
         Assert.True(viewModel.HasReservationRecords);
         Assert.Equal(2, viewModel.HomeReservationRecords.Count);
-        Assert.Contains(viewModel.HomeReservationRecords, record => record.KindText == "今日预约" && record.VenueText == "电子阅览室");
-        Assert.Contains(viewModel.HomeReservationRecords, record => record.KindText == "明日预约" && record.VenueText == "社科阅览室");
+        Assert.Contains(viewModel.HomeReservationRecords, record => record.KindText == "今日预约" && record.VenueText == "电子阅览室（3楼）");
+        Assert.Contains(viewModel.HomeReservationRecords, record => record.KindText == "明日预约" && record.VenueText == "社科阅览室（5楼）");
+        Assert.Equal("电子阅览室（3楼） · 4", viewModel.ReservationHeroTitle);
         Assert.True(viewModel.HasCurrentReservation);
     }
 

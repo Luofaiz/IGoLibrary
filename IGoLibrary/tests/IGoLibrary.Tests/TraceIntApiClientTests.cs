@@ -452,6 +452,7 @@ public sealed class TraceIntApiClientTests
                         "reserve": {
                           "lib_id": 11,
                           "lib_name": "电子阅览室",
+                          "lib_floor": "3",
                           "seat_key": "3,4",
                           "seat_name": "304",
                           "date": "2026-05-25",
@@ -472,6 +473,7 @@ public sealed class TraceIntApiClientTests
                           "day": 1,
                           "lib_id": 22,
                           "lib_name": "社科阅览室",
+                          "lib_floor": "5",
                           "seat_key": "7,8",
                           "seat_name": "508",
                           "is_used": false,
@@ -504,11 +506,13 @@ public sealed class TraceIntApiClientTests
         Assert.Contains(records, record =>
             record.Kind == ReservationRecordKind.Today &&
             record.LibraryName == "电子阅览室" &&
+            record.LibraryFloor == "3" &&
             record.SeatName == "304" &&
             record.ReservationToken == "today-token");
         Assert.Contains(records, record =>
             record.Kind == ReservationRecordKind.Tomorrow &&
             record.LibraryName == "社科阅览室" &&
+            record.LibraryFloor == "5" &&
             record.SeatName == "508" &&
             record.ReservationToken == "tomorrow-token");
     }

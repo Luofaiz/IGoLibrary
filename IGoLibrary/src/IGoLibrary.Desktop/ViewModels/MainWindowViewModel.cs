@@ -3841,7 +3841,8 @@ public partial class MainWindowViewModel(
                 today.SeatKey,
                 today.SeatName,
                 expirationTime,
-                today.IsCheckedIn);
+                today.IsCheckedIn,
+                LibraryFloor: today.LibraryFloor);
         _reservationRecords = records;
 
         _homeReservationRecords.Clear();
@@ -3870,7 +3871,10 @@ public partial class MainWindowViewModel(
         }
 
         ReservationSummary = $"{_currentReservation.LibraryName} / {_currentReservation.SeatName} / 到期 {_currentReservation.ExpirationTime:HH:mm:ss}";
-        ReservationHeroTitle = $"{_currentReservation.LibraryName} · {_currentReservation.SeatName}";
+        var reservationVenue = string.IsNullOrWhiteSpace(_currentReservation.LibraryFloor)
+            ? _currentReservation.LibraryName
+            : $"{_currentReservation.LibraryName}（{_currentReservation.LibraryFloor.TrimEnd('楼')}楼）";
+        ReservationHeroTitle = $"{reservationVenue} · {_currentReservation.SeatName}";
         UpdateReservationCountdown();
         UpdateHomeReservationCardPresentation(DateTimeOffset.Now);
         UpdateHomeSystemInfoPresentation();
