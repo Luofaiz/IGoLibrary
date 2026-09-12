@@ -620,7 +620,7 @@ public sealed class TraceIntApiClient(
         string cookie,
         CancellationToken cancellationToken = default)
     {
-        const string prereservePayload = """{"operationName":"prereserve","query":"query prereserve {\n userAuth {\n prereserve {\n prereserve {\n day\n lib_id\n lib_floor\n seat_key\n seat_name\n is_used\n user_mobile\n id\n lib_name\n }\n }\n }\n}"}""";
+        const string prereservePayload = """{"operationName":"prereserve","query":"query prereserve {\n userAuth {\n prereserve {\n prereserve {\n day\n lib_id\n seat_key\n seat_name\n is_used\n user_mobile\n id\n lib_name\n }\n }\n }\n}"}""";
 
         using var response = await SendGraphQlAsync(cookie, prereservePayload, cancellationToken, usePrereserveHeaders: true);
         var raw = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -691,7 +691,7 @@ public sealed class TraceIntApiClient(
         return true;
     }
 
-    private static bool TryReadTomorrowReservationRecord(JsonElement item, out ReservationRecord record)
+    private bool TryReadTomorrowReservationRecord(JsonElement item, out ReservationRecord record)
     {
         record = default!;
         if (item.ValueKind is not JsonValueKind.Object)
@@ -707,6 +707,9 @@ public sealed class TraceIntApiClient(
             return false;
         }
 
+        var libraryFloor = runtimeState?.Libraries
+            .FirstOrDefault(library => library.LibraryId == ReadOptionalIntProperty(item, "lib_id"))
+            ?.Floor ?? string.Empty;
         record = new ReservationRecord(
             ReservationRecordKind.Tomorrow,
             ReadOptionalStringProperty(item, "id"),
@@ -717,7 +720,7 @@ public sealed class TraceIntApiClient(
             null,
             ResolvePrereserveDate(item),
             ReadOptionalBooleanProperty(item, "is_used"),
-            LibraryFloor: ReadOptionalStringProperty(item, "lib_floor"));
+            LibraryFloor: libraryFloor);
         return true;
     }
 

@@ -205,7 +205,14 @@ public sealed class TraceIntApiClientTests
                 "{\"query\":\"reservation\"}",
                 "{\"query\":\"reserve\"}",
                 "{\"query\":\"cancel\"}")),
-            new FakeSettingsService(AppSettings.Default));
+            new FakeSettingsService(AppSettings.Default),
+            new AppRuntimeState
+            {
+                Libraries =
+                [
+                    new LibrarySummary(22, "社科阅览室", "5", true)
+                ]
+            });
 
         var rule = await client.GetLibraryRuleAsync("Authorization=a; SERVERID=b", 117580);
 
@@ -443,6 +450,13 @@ public sealed class TraceIntApiClientTests
     [Fact]
     public async Task GetReservationRecordsAsync_ReturnsTodayAndTomorrowReservations()
     {
+        var runtimeState = new AppRuntimeState
+        {
+            Libraries =
+            [
+                new LibrarySummary(22, "社科阅览室", "5", true)
+            ]
+        };
         var handler = new SequenceHttpMessageHandler(
             (_, _) => SequenceHttpMessageHandler.JsonResponseAsync("""
                 {
@@ -498,7 +512,8 @@ public sealed class TraceIntApiClientTests
                 "{\"query\":\"reservation\"}",
                 "{\"query\":\"reserve\"}",
                 "{\"query\":\"cancel\"}")),
-            new FakeSettingsService(AppSettings.Default));
+            new FakeSettingsService(AppSettings.Default),
+            runtimeState);
 
         var records = await client.GetReservationRecordsAsync("Authorization=a; SERVERID=b");
 
