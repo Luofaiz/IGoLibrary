@@ -756,6 +756,45 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SelectAllFavoriteSeats_AddsFavoritesToDraftSelection()
+    {
+        var library = new LibrarySummary(10, "自科阅览区", "3", true, 120, 10, 0);
+        var libraryService = new FakeLibraryService
+        {
+            LibrariesToLoad = [library]
+        };
+        libraryService.LayoutsByLibraryId[library.LibraryId] = new LibraryLayout(
+            library.LibraryId,
+            library.Name,
+            library.Floor,
+            library.IsOpen,
+            120,
+            0,
+            10,
+            [
+                new SeatSnapshot("a210", "A210", false, 0, 0),
+                new SeatSnapshot("a302", "A302", false, 0, 0),
+                new SeatSnapshot("a612", "A612", false, 0, 0)
+            ]);
+        libraryService.FavoritesByLibraryId[library.LibraryId] =
+        [
+            new TrackedSeat("a210", "A210"),
+            new TrackedSeat("a612", "A612")
+        ];
+        var viewModel = CreateViewModel(libraryService: libraryService);
+
+        viewModel.IsAuthorized = true;
+        viewModel.SelectedLibrary = library;
+        await viewModel.BindSelectedLibraryCommand.ExecuteAsync(null);
+        viewModel.VisibleSeats.Single(x => x.SeatKey == "a302").IsSelected = true;
+        await viewModel.OpenGrabSeatSelectionOverlayCommand.ExecuteAsync(null);
+
+        viewModel.SelectAllFavoriteSeatsCommand.Execute(null);
+
+        Assert.Equal(["A302", "A210", "A612"], viewModel.DraftSelectedSeats.Select(x => x.SeatName).ToArray());
+    }
+
+    [Fact]
     public async Task StartRandomAvailableSeatGrabAsync_StartsGrabCoordinatorWithoutSelectedSeats()
     {
         var library = new LibrarySummary(10, "library", "3", true, 120, 10, 0);

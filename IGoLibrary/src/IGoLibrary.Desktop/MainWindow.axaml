@@ -2097,7 +2097,7 @@
               </Grid>
 
               <Grid Grid.Row="1"
-                    ColumnDefinitions="2.1*,Auto,Auto,Auto,Auto"
+                    ColumnDefinitions="2.1*,Auto,Auto,Auto,Auto,Auto"
                     ColumnSpacing="12">
                 <TextBox Text="{Binding SeatFilterText}"
                          Watermark="仅按座位号过滤"
@@ -2119,6 +2119,11 @@
                 <Button Grid.Column="4"
                         Content="取消收藏"
                         Command="{Binding RemoveFavoritesCommand}"
+                        Classes="Secondary"
+                        HorizontalContentAlignment="Center" />
+                <Button Grid.Column="5"
+                        Content="全选收藏"
+                        Command="{Binding SelectAllFavoriteSeatsCommand}"
                         Classes="Secondary"
                         HorizontalContentAlignment="Center" />
               </Grid>

@@ -1493,6 +1493,23 @@ public partial class MainWindowViewModel(
     }
 
     [RelayCommand]
+    private void SelectAllFavoriteSeats()
+    {
+        if (!CanEditGrabConfiguration)
+        {
+            return;
+        }
+
+        foreach (var seat in _allSeats.Where(x => x.IsFavorite && !_draftSelectedSeatKeys.Contains(x.SeatKey)))
+        {
+            _draftSelectedSeatKeys.Add(seat.SeatKey);
+        }
+
+        ApplySelectionToSeatItems(_draftSelectedSeatKeys);
+        UpdateDraftSelectionPresentation();
+    }
+
+    [RelayCommand]
     private void RemoveSelectedSeat(TrackedSeat? seat)
     {
         if (seat is null || !CanEditGrabConfiguration)
