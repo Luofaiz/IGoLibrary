@@ -25,6 +25,12 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        using var singleInstanceMutex = new Mutex(true, "IGoLibrary.Desktop.SingleInstance", out var ownsSingleInstanceMutex);
+        if (!ownsSingleInstanceMutex && !args.Contains(ScheduledCheckoutArgument, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         using var sharedLogWriter = new AppLogFileWriter();
         RegisterGlobalExceptionLogging(sharedLogWriter);
 
