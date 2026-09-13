@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using IGoLibrary.Application.Abstractions;
@@ -23,9 +24,12 @@ public sealed class SqliteSettingsRepository(SqliteConnectionFactory connectionF
         {
             var migratedJson = MigrateLegacyAppSettingsJson(json);
             var settings = JsonSerializer.Deserialize<AppSettings>(migratedJson, AppJson.Default) ?? AppSettings.Default;
-            return Normalize(settings);
+            var normalized = Normalize(settings);
+            Trace.WriteLine($"[DataDiagnostic] Settings loaded: database={AppDataPaths.DatabasePath}; successfulReservationCount={normalized.SuccessfulReservationCount}");
+            return normalized;
         }
 
+        Trace.WriteLine($"[DataDiagnostic] Settings missing: database={AppDataPaths.DatabasePath}; using defaults");
         return AppSettings.Default;
     }
 

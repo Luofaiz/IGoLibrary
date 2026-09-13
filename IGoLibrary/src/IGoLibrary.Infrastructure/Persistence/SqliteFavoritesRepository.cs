@@ -1,6 +1,7 @@
 using IGoLibrary.Application.Abstractions;
 using IGoLibrary.Domain.Models;
 using Microsoft.Data.Sqlite;
+using System.Diagnostics;
 
 namespace IGoLibrary.Infrastructure.Persistence;
 
@@ -25,6 +26,7 @@ public sealed class SqliteFavoritesRepository(SqliteConnectionFactory connection
                 reader.GetString(1)));
         }
 
+        Trace.WriteLine($"[DataDiagnostic] Favorites loaded: database={AppDataPaths.DatabasePath}; libraryId={libraryId}; count={results.Count}; seats={string.Join(",", results.Select(x => x.SeatName))}");
         return results;
     }
 
