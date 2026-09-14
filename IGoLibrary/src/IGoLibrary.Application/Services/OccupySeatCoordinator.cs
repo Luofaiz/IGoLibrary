@@ -60,19 +60,22 @@ public sealed class OccupySeatCoordinator(
         Task? runningTask;
         lock (_gate)
         {
-            if (_cts is null)
+            if (_runningTask is null || _runningTask.IsCompleted)
             {
                 return;
             }
 
-            _status = GetStatus() with
+            if (_cts is not null)
             {
-                State = CoordinatorTaskState.Stopping,
-                Message = "正在停止占座任务。",
-                LastUpdatedAt = DateTimeOffset.Now
-            };
-            NotifyStatusChanged();
-            _cts.Cancel();
+                _status = GetStatus() with
+                {
+                    State = CoordinatorTaskState.Stopping,
+                    Message = "正在停止占座任务。",
+                    LastUpdatedAt = DateTimeOffset.Now
+                };
+                NotifyStatusChanged();
+                _cts.Cancel();
+            }
             runningTask = _runningTask;
         }
 
@@ -112,15 +115,10 @@ public sealed class OccupySeatCoordinator(
                     return;
                 }
 
-                var scheduledReReserveTime = plan.TriggerMode == OccupyReReserveTriggerMode.ScheduledTime
-                    ? plan.ScheduledReReserveTime
-                    : null;
-
                 if (!ReservationTimeHelper.ShouldReReserve(
                         info.ExpirationTime,
                         DateTimeOffset.Now,
-                        plan.ReReserveLeadTime,
-                        scheduledReReserveTime))
+                        plan.ReReserveLeadTime))
                 {
                     var delay = plan.RefreshMode == RefreshMode.FixedTenSeconds
                         ? TimeSpan.FromSeconds(10)
@@ -128,8 +126,7 @@ public sealed class OccupySeatCoordinator(
                     var triggerRemaining = ReservationTimeHelper.GetReReserveTriggerRemaining(
                         info.ExpirationTime,
                         DateTimeOffset.Now,
-                        plan.ReReserveLeadTime,
-                        scheduledReReserveTime);
+                        plan.ReReserveLeadTime);
                     activityLogService.Write(LogEntryKind.Info, "Occupy", $"距离重约触发还有 {triggerRemaining.TotalSeconds:0} 秒，{delay.TotalSeconds:0} 秒后继续检测。");
                     await Task.Delay(delay, cancellationToken);
                     continue;
@@ -192,7 +189,6 @@ public sealed class OccupySeatCoordinator(
         lock (_gate)
         {
             _cts = null;
-            _runningTask = null;
             _status = new CoordinatorStatus(
                 CoordinatorTaskState.Completed,
                 "占座",
@@ -209,7 +205,6 @@ public sealed class OccupySeatCoordinator(
         lock (_gate)
         {
             _cts = null;
-            _runningTask = null;
             _status = new CoordinatorStatus(
                 CoordinatorTaskState.Failed,
                 "占座",

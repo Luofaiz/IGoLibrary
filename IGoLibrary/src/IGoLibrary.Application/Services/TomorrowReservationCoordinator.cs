@@ -66,19 +66,22 @@ public sealed class TomorrowReservationCoordinator(
         Task? runningTask;
         lock (_gate)
         {
-            if (_cts is null)
+            if (_runningTask is null || _runningTask.IsCompleted)
             {
                 return;
             }
 
-            _status = GetStatus() with
+            if (_cts is not null)
             {
-                State = CoordinatorTaskState.Stopping,
-                Message = "正在停止明日预约任务。",
-                LastUpdatedAt = DateTimeOffset.Now
-            };
-            NotifyStatusChanged();
-            _cts.Cancel();
+                _status = GetStatus() with
+                {
+                    State = CoordinatorTaskState.Stopping,
+                    Message = "正在停止明日预约任务。",
+                    LastUpdatedAt = DateTimeOffset.Now
+                };
+                NotifyStatusChanged();
+                _cts.Cancel();
+            }
             runningTask = _runningTask;
         }
 
@@ -285,9 +288,6 @@ public sealed class TomorrowReservationCoordinator(
         {
             markRequestSent();
             var result = await apiClient.SavePrereserveSeatAsync(cookie, libraryId, seat.SeatKey, cancellationToken);
-            runtimeState.Session = runtimeState.Session is null
-                ? null
-                : runtimeState.Session with { Cookie = result.UpdatedCookie };
 
             if (result.Submitted)
             {
@@ -974,7 +974,6 @@ public sealed class TomorrowReservationCoordinator(
         lock (_gate)
         {
             _cts = null;
-            _runningTask = null;
             _status = new CoordinatorStatus(
                 CoordinatorTaskState.Completed,
                 "明日预约",
@@ -994,7 +993,6 @@ public sealed class TomorrowReservationCoordinator(
         lock (_gate)
         {
             _cts = null;
-            _runningTask = null;
             _status = new CoordinatorStatus(
                 CoordinatorTaskState.Failed,
                 "明日预约",

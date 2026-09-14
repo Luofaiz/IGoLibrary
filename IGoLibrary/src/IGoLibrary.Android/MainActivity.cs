@@ -44,7 +44,6 @@ public sealed class MainActivity : Activity
     private EditText _scheduledTimeInput = null!;
     private EditText _occupyLeadMinutesInput = null!;
     private EditText _occupyLeadSecondsInput = null!;
-    private EditText _occupyScheduledTimeInput = null!;
     private Button _openWechatButton = null!;
     private Button _copyAuthUrlButton = null!;
     private Button _loginButton = null!;
@@ -63,7 +62,6 @@ public sealed class MainActivity : Activity
     private Spinner _librarySpinner = null!;
     private Spinner _grabModeSpinner = null!;
     private Spinner _reservationStrategySpinner = null!;
-    private Spinner _occupyTriggerSpinner = null!;
     private Spinner _refreshModeSpinner = null!;
     private TextView _statusText = null!;
     private TextView _seatText = null!;
@@ -318,11 +316,6 @@ public sealed class MainActivity : Activity
         _reservationText = CreatePanelText("预约信息：未查询");
         content.AddView(_reservationText, MatchWrap(top: 10));
 
-        content.AddView(CreateText("占座触发方式", 13, TypefaceStyle.Bold), MatchWrap(top: 12));
-        _occupyTriggerSpinner = new Spinner(this);
-        _occupyTriggerSpinner.Adapter = CreateAdapter(["到期前", "指定时间"]);
-        content.AddView(_occupyTriggerSpinner, MatchWrap(top: 6));
-
         var occupyLeadRow = new LinearLayout(this)
         {
             Orientation = Orientation.Horizontal
@@ -342,14 +335,6 @@ public sealed class MainActivity : Activity
         occupyLeadRow.AddView(_occupyLeadMinutesInput, WeightWrap());
         occupyLeadRow.AddView(_occupyLeadSecondsInput, WeightWrap(left: 10));
         content.AddView(occupyLeadRow, MatchWrap(top: 10));
-
-        _occupyScheduledTimeInput = new EditText(this)
-        {
-            Hint = "指定重约时间 HH:mm:ss",
-            Text = "00:00:00"
-        };
-        _occupyScheduledTimeInput.InputType = global::Android.Text.InputTypes.ClassDatetime;
-        content.AddView(_occupyScheduledTimeInput, MatchWrap(top: 10));
 
         content.AddView(CreateText("占座刷新频率", 13, TypefaceStyle.Bold), MatchWrap(top: 10));
         _refreshModeSpinner = new Spinner(this);
@@ -909,9 +894,6 @@ public sealed class MainActivity : Activity
 
     private OccupySeatPlan BuildOccupySeatPlan()
     {
-        var triggerMode = _occupyTriggerSpinner.SelectedItemPosition == 1
-            ? OccupyReReserveTriggerMode.ScheduledTime
-            : OccupyReReserveTriggerMode.BeforeExpiration;
         var minutes = Math.Clamp(ReadInt(_occupyLeadMinutesInput, 1), 0, 180);
         var seconds = Math.Clamp(ReadInt(_occupyLeadSecondsInput, 0), 0, 59);
         var leadTime = TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(seconds);
@@ -920,21 +902,10 @@ public sealed class MainActivity : Activity
             leadTime = TimeSpan.FromSeconds(1);
         }
 
-        TimeOnly? scheduledTime = null;
-        if (triggerMode == OccupyReReserveTriggerMode.ScheduledTime)
-        {
-            if (!TimeOnly.TryParse(_occupyScheduledTimeInput.Text, out var parsed))
-            {
-                throw new InvalidOperationException("指定重约时间格式应为 HH:mm:ss，例如 14:30:00。");
-            }
-
-            scheduledTime = parsed;
-        }
-
         var refreshMode = _refreshModeSpinner.SelectedItemPosition == 1
             ? RefreshMode.RandomTenToTwentySeconds
             : RefreshMode.FixedTenSeconds;
-        return new OccupySeatPlan(leadTime, refreshMode, triggerMode, scheduledTime);
+        return new OccupySeatPlan(leadTime, refreshMode);
     }
 
     private TimeOnly? ParseScheduledTime()

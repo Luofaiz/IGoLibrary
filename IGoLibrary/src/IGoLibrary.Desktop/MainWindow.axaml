@@ -1342,14 +1342,6 @@
                   </StackPanel>
 
                   <StackPanel Spacing="0">
-                    <TextBlock Classes="field-label" Text="重约触发方式" />
-                    <ComboBox SelectedIndex="{Binding SelectedOccupyReReserveTriggerModeIndex}"
-                              ItemsSource="{Binding OccupyReReserveTriggerModes}"
-                              HorizontalAlignment="Stretch" />
-                  </StackPanel>
-
-                  <StackPanel Spacing="0"
-                              IsVisible="{Binding IsOccupyBeforeExpirationMode}">
                     <TextBlock Classes="field-label" Text="到期前重约时间" />
                     <Grid ColumnDefinitions="*,Auto,*,Auto"
                           ColumnSpacing="10">
@@ -1389,13 +1381,6 @@
                     </Grid>
                   </StackPanel>
 
-                  <StackPanel Spacing="0"
-                              IsVisible="{Binding IsOccupyScheduledTimeMode}">
-                    <TextBlock Classes="field-label" Text="指定重约时间" />
-                    <TextBox Text="{Binding OccupyScheduledReReserveTimeText}"
-                             Watermark="HH:mm:ss，例如 14:30:00"
-                             HorizontalAlignment="Stretch" />
-                  </StackPanel>
                 </StackPanel>
               </Grid>
             </Border>
@@ -1953,7 +1938,7 @@
                       <TextBlock Classes="guide-card-title" Text="占座守护" />
                     </StackPanel>
                     <TextBlock Classes="guide-body"
-                               Text="已有今日预约后，可选择“到期前”或“指定时间”触发重约。程序会在触发点取消当前预约并尝试重新预约原座，因此不是单纯延长时间。" />
+                               Text="已有尚未签到的今日预约后，可设置到期前提前多少分钟、秒触发重约；签到后停止守护。程序会在触发点取消当前预约并尝试重新预约原座，因此不是单纯延长时间。" />
                     <TextBlock Classes="guide-body"
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource SemiWarningTextBrush}"

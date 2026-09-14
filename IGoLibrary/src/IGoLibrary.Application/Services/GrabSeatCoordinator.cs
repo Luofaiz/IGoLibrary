@@ -57,19 +57,22 @@ public sealed class GrabSeatCoordinator(
         Task? runningTask;
         lock (_gate)
         {
-            if (_cts is null)
+            if (_runningTask is null || _runningTask.IsCompleted)
             {
                 return;
             }
 
-            _status = GetStatus() with
+            if (_cts is not null)
             {
-                State = CoordinatorTaskState.Stopping,
-                Message = "正在停止抢座任务。",
-                LastUpdatedAt = DateTimeOffset.Now
-            };
-            NotifyStatusChanged();
-            _cts.Cancel();
+                _status = GetStatus() with
+                {
+                    State = CoordinatorTaskState.Stopping,
+                    Message = "正在停止抢座任务。",
+                    LastUpdatedAt = DateTimeOffset.Now
+                };
+                NotifyStatusChanged();
+                _cts.Cancel();
+            }
             runningTask = _runningTask;
         }
 
@@ -255,7 +258,6 @@ public sealed class GrabSeatCoordinator(
         lock (_gate)
         {
             _cts = null;
-            _runningTask = null;
             _status = new CoordinatorStatus(
                 CoordinatorTaskState.Completed,
                 "抢座",
@@ -275,7 +277,6 @@ public sealed class GrabSeatCoordinator(
         lock (_gate)
         {
             _cts = null;
-            _runningTask = null;
             _status = new CoordinatorStatus(
                 CoordinatorTaskState.Failed,
                 "抢座",

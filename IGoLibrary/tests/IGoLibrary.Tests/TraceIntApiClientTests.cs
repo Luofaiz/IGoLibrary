@@ -419,7 +419,8 @@ public sealed class TraceIntApiClientTests
                 capturedRequest = request;
                 capturedPayload = await request.Content!.ReadAsStringAsync();
                 return await SequenceHttpMessageHandler.JsonResponseAsync("""{"data":{"userAuth":{"prereserve":{"cancle":true}}}}""");
-            });
+            },
+            (_, _) => SequenceHttpMessageHandler.JsonResponseAsync("""{"data":{"userAuth":{"prereserve":{"prereserve":null}}}}"""));
 
         var client = new TraceIntApiClient(
             new HttpClient(handler)

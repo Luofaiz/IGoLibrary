@@ -543,25 +543,28 @@ public sealed class TraceIntApiClient(
     {
         var templates = await protocolTemplateStore.GetEffectiveTemplatesAsync(cancellationToken);
         var payload = templates.CancelReservationTemplate.Replace("ReplaceMe", reservationToken, StringComparison.Ordinal);
-
         using var response = await SendGraphQlAsync(cookie, payload, cancellationToken);
-        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
-        using var document = JsonDocument.Parse(raw);
-
-        if (TryFindErrorInfo(document.RootElement, out var errorInfo))
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        var root = document.RootElement;
+        if (TryFindErrorInfo(root, out var errorInfo))
         {
-            return errorInfo.Message.Contains("成功", StringComparison.OrdinalIgnoreCase);
+            if (!IsCancellationSuccessMessage(errorInfo.Message))
+                throw new TraceIntApiException(errorInfo.Message, errorInfo.Code, errorInfo.Message);
+        }
+        else if (!root.TryGetProperty("data", out var data) ||
+                 !data.TryGetProperty("userAuth", out var userAuth) || userAuth.ValueKind != JsonValueKind.Object ||
+                 !userAuth.TryGetProperty("reserve", out var reserve) || reserve.ValueKind != JsonValueKind.Object ||
+                 !reserve.TryGetProperty("reserveCancle", out var result) || !IsCancellationAccepted(result))
+        {
+            return false;
         }
 
-        if (document.RootElement.TryGetProperty("data", out var data) &&
-            data.TryGetProperty("userAuth", out var userAuth) &&
-            userAuth.TryGetProperty("reserve", out var reserve) &&
-            reserve.TryGetProperty("reserveCancle", out _))
-        {
-            return true;
-        }
-
-        return false;
+        // Acknowledgement alone is insufficient: keep the UI record until the server confirms removal.
+        using var confirmation = await SendGraphQlAsync(GetCurrentRequestCookie(cookie), templates.QueryReservationInfoTemplate, cancellationToken);
+        using var confirmationDocument = JsonDocument.Parse(await confirmation.Content.ReadAsStringAsync(cancellationToken));
+        ThrowIfGraphQlError(confirmationDocument.RootElement);
+        return confirmationDocument.RootElement.GetProperty("data").GetProperty("userAuth")
+            .GetProperty("reserve").GetProperty("reserve").ValueKind == JsonValueKind.Null;
     }
 
     public async Task<bool> CancelPrereserveAsync(string cookie, CancellationToken cancellationToken = default)
@@ -577,33 +580,44 @@ public sealed class TraceIntApiClient(
         var raw = await response.Content.ReadAsStringAsync(cancellationToken);
         using var document = JsonDocument.Parse(raw);
 
-        if (TryFindErrorInfo(document.RootElement, out var errorInfo))
+        var root = document.RootElement;
+        if (TryFindErrorInfo(root, out var errorInfo))
         {
-            return errorInfo.Message.Contains("成功", StringComparison.OrdinalIgnoreCase);
+            if (!IsCancellationSuccessMessage(errorInfo.Message))
+                throw new TraceIntApiException(errorInfo.Message, errorInfo.Code, errorInfo.Message);
+        }
+        else if (!root.TryGetProperty("data", out var data) ||
+                 !data.TryGetProperty("userAuth", out var userAuth) || userAuth.ValueKind != JsonValueKind.Object ||
+                 !userAuth.TryGetProperty("prereserve", out var prereserve) || prereserve.ValueKind != JsonValueKind.Object ||
+                 !prereserve.TryGetProperty("cancle", out var result) || !IsCancellationAccepted(result))
+        {
+            return false;
         }
 
-        if (document.RootElement.TryGetProperty("data", out var data) &&
-            data.TryGetProperty("userAuth", out var userAuth) &&
-            userAuth.TryGetProperty("prereserve", out var prereserve) &&
-            prereserve.TryGetProperty("cancle", out var cancleResult))
-        {
-            if (cancleResult.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-            {
-                return false;
-            }
-
-            try
-            {
-                return ReadBooleanLike(cancleResult, "cancle");
-            }
-            catch (InvalidOperationException)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        const string confirmationPayload = """{"operationName":"prereserve","query":"query prereserve { userAuth { prereserve { prereserve { id is_used } } } }"}""";
+        using var confirmation = await SendGraphQlAsync(GetCurrentRequestCookie(cookie), confirmationPayload, cancellationToken, usePrereserveHeaders: true);
+        using var confirmationDocument = JsonDocument.Parse(await confirmation.Content.ReadAsStringAsync(cancellationToken));
+        ThrowIfGraphQlError(confirmationDocument.RootElement);
+        var remaining = confirmationDocument.RootElement.GetProperty("data").GetProperty("userAuth")
+            .GetProperty("prereserve").GetProperty("prereserve");
+        return remaining.ValueKind == JsonValueKind.Null ||
+               remaining.ValueKind == JsonValueKind.Array && remaining.GetArrayLength() == 0;
     }
+
+    private static bool IsCancellationSuccessMessage(string message) =>
+        message.Trim().TrimEnd('。', '！', '!') is "取消成功" or "取消预约成功" or "退座成功";
+
+    private static bool IsCancellationAccepted(JsonElement result) => result.ValueKind switch
+    {
+        JsonValueKind.True => true,
+        JsonValueKind.Number => result.TryGetInt32(out var value) && value == 1,
+        JsonValueKind.String => string.Equals(result.GetString(), "true", StringComparison.OrdinalIgnoreCase) ||
+                                IsCancellationSuccessMessage(result.GetString() ?? string.Empty),
+        JsonValueKind.Object => true, // Official reserveCancle returns study statistics; verify removal below.
+        _ => false
+    };
+
+    private string GetCurrentRequestCookie(string requestCookie) => runtimeState?.Session?.Cookie ?? requestCookie;
 
     private async Task<HttpResponseMessage> SendGraphQlAsync(
         string cookie,

@@ -16,6 +16,7 @@ public sealed class SessionService(
 
     public async Task<SessionCredentials> AuthenticateFromCodeAsync(string code, CancellationToken cancellationToken = default)
     {
+        runtimeState.BeginSessionChange();
         var cookie = await apiClient.GetCookieFromCodeAsync(code, cancellationToken);
         await ValidateCookieForSessionAsync(cookie, cancellationToken);
 
@@ -28,6 +29,7 @@ public sealed class SessionService(
 
     public async Task<SessionCredentials> AuthenticateFromCookieAsync(string cookie, bool remember, CancellationToken cancellationToken = default)
     {
+        runtimeState.BeginSessionChange();
         var pendingSession = new SessionCredentials(cookie, SessionSource.ManualCookie, DateTimeOffset.Now, remember);
         runtimeState.Session = pendingSession;
         try
@@ -57,6 +59,7 @@ public sealed class SessionService(
 
     public async Task<SessionCredentials?> RestoreAsync(CancellationToken cancellationToken = default)
     {
+        runtimeState.BeginSessionChange();
         SessionCredentials? stored;
         try
         {
@@ -99,6 +102,7 @@ public sealed class SessionService(
 
     public async Task SignOutAsync(CancellationToken cancellationToken = default)
     {
+        runtimeState.BeginSessionChange();
         runtimeState.Session = null;
         runtimeState.BoundLibrary = null;
         runtimeState.CurrentLayout = null;

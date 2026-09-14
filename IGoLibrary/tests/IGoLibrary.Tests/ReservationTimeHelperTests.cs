@@ -58,33 +58,4 @@ public sealed class ReservationTimeHelperTests
         Assert.Equal(TimeSpan.FromMinutes(29), remaining);
     }
 
-    [Fact]
-    public void ShouldReReserve_UsesScheduledTimeBeforeLeadWindow()
-    {
-        var now = new DateTimeOffset(2026, 5, 24, 14, 30, 0, TimeSpan.FromHours(8));
-        var expiration = now.AddHours(2);
-
-        var shouldReReserve = ReservationTimeHelper.ShouldReReserve(
-            expiration,
-            now,
-            TimeSpan.FromMinutes(1),
-            new TimeOnly(14, 29, 59));
-
-        Assert.True(shouldReReserve);
-    }
-
-    [Fact]
-    public void GetReReserveTriggerRemaining_ChoosesEarlierScheduledTime()
-    {
-        var now = new DateTimeOffset(2026, 5, 24, 14, 0, 0, TimeSpan.FromHours(8));
-        var expiration = now.AddHours(2);
-
-        var remaining = ReservationTimeHelper.GetReReserveTriggerRemaining(
-            expiration,
-            now,
-            TimeSpan.FromMinutes(1),
-            new TimeOnly(14, 30, 0));
-
-        Assert.Equal(TimeSpan.FromMinutes(30), remaining);
-    }
 }

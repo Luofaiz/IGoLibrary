@@ -19,73 +19,10 @@ public static class ReservationTimeHelper
         return expirationTime - now <= leadTime;
     }
 
-    public static bool ShouldReReserve(
-        DateTimeOffset expirationTime,
-        DateTimeOffset now,
-        TimeSpan leadTime,
-        TimeOnly? scheduledReReserveTime)
-    {
-        if (ShouldReReserve(expirationTime, now, leadTime))
-        {
-            return true;
-        }
-
-        if (scheduledReReserveTime is null)
-        {
-            return false;
-        }
-
-        var scheduledAt = ResolveScheduledReReserveTime(expirationTime, now, scheduledReReserveTime.Value);
-        return now >= scheduledAt;
-    }
-
     public static TimeSpan GetReReserveTriggerRemaining(DateTimeOffset expirationTime, DateTimeOffset now, TimeSpan leadTime)
     {
         var remaining = expirationTime - now - leadTime;
         return remaining <= TimeSpan.Zero ? TimeSpan.Zero : remaining;
     }
 
-    public static TimeSpan GetReReserveTriggerRemaining(
-        DateTimeOffset expirationTime,
-        DateTimeOffset now,
-        TimeSpan leadTime,
-        TimeOnly? scheduledReReserveTime)
-    {
-        var leadRemaining = GetReReserveTriggerRemaining(expirationTime, now, leadTime);
-        if (scheduledReReserveTime is null)
-        {
-            return leadRemaining;
-        }
-
-        var scheduledAt = ResolveScheduledReReserveTime(expirationTime, now, scheduledReReserveTime.Value);
-        var scheduledRemaining = scheduledAt - now;
-        if (scheduledRemaining <= TimeSpan.Zero)
-        {
-            return TimeSpan.Zero;
-        }
-
-        return scheduledRemaining <= leadRemaining ? scheduledRemaining : leadRemaining;
-    }
-
-    public static DateTimeOffset ResolveScheduledReReserveTime(
-        DateTimeOffset expirationTime,
-        DateTimeOffset now,
-        TimeOnly scheduledReReserveTime)
-    {
-        var scheduledAt = new DateTimeOffset(
-            now.Date.Add(scheduledReReserveTime.ToTimeSpan()),
-            now.Offset);
-
-        if (scheduledAt > expirationTime)
-        {
-            scheduledAt = scheduledAt.AddDays(-1);
-        }
-
-        if (now - scheduledAt >= TimeSpan.FromHours(12) && scheduledAt.AddDays(1) <= expirationTime)
-        {
-            scheduledAt = scheduledAt.AddDays(1);
-        }
-
-        return scheduledAt;
-    }
 }

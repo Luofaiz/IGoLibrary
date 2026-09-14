@@ -144,7 +144,7 @@ public sealed class OccupySeatCoordinatorTests
     }
 
     [Fact]
-    public async Task StartAsync_UsesScheduledReReserveTime_WhenConfigured()
+    public async Task StartAsync_DoesNotCancelBeforeLeadWindow()
     {
         var reserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var reserveAttempts = 0;
@@ -183,15 +183,13 @@ public sealed class OccupySeatCoordinatorTests
         using var cts = new CancellationTokenSource();
         await coordinator.StartAsync(new OccupySeatPlan(
             TimeSpan.FromMinutes(1),
-            RefreshMode.FixedTenSeconds,
-            OccupyReReserveTriggerMode.ScheduledTime,
-            TimeOnly.FromDateTime(DateTime.Now.AddSeconds(-1))), cts.Token);
+            RefreshMode.FixedTenSeconds), cts.Token);
 
-        await reserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(100);
         cts.Cancel();
         await coordinator.StopAsync();
 
-        Assert.Equal(1, reserveAttempts);
+        Assert.Equal(0, reserveAttempts);
         Assert.NotEqual(CoordinatorTaskState.Failed, coordinator.GetStatus().State);
     }
 

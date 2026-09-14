@@ -633,6 +633,8 @@ internal sealed class FakeGrabSeatCoordinator : IGrabSeatCoordinator
 
     public int StartCalls { get; private set; }
 
+    public int StopCalls { get; private set; }
+
     public Task StartAsync(GrabSeatPlan plan, CancellationToken cancellationToken = default)
     {
         StartCalls++;
@@ -647,8 +649,12 @@ internal sealed class FakeGrabSeatCoordinator : IGrabSeatCoordinator
         return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken = default)
+    public Task StopCompletion { get; set; } = Task.CompletedTask;
+
+    public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        StopCalls++;
+        await StopCompletion.WaitAsync(cancellationToken);
         _status = new CoordinatorStatus(
             CoordinatorTaskState.Completed,
             "抢座",
@@ -656,7 +662,7 @@ internal sealed class FakeGrabSeatCoordinator : IGrabSeatCoordinator
             _status.StartedAt,
             DateTimeOffset.Now);
         StatusChanged?.Invoke(this, _status);
-        return Task.CompletedTask;
+
     }
 
     public CoordinatorStatus GetStatus() => _status;
@@ -688,9 +694,12 @@ internal sealed class FakeTomorrowReservationCoordinator : ITomorrowReservationC
         return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken = default)
+    public Task StopCompletion { get; set; } = Task.CompletedTask;
+
+    public async Task StopAsync(CancellationToken cancellationToken = default)
     {
         StopCalls++;
+        await StopCompletion.WaitAsync(cancellationToken);
         _status = new CoordinatorStatus(
             CoordinatorTaskState.Completed,
             "明日预约",
@@ -698,7 +707,7 @@ internal sealed class FakeTomorrowReservationCoordinator : ITomorrowReservationC
             _status.StartedAt,
             DateTimeOffset.Now);
         StatusChanged?.Invoke(this, _status);
-        return Task.CompletedTask;
+
     }
 
     public CoordinatorStatus GetStatus() => _status;
@@ -714,6 +723,8 @@ internal sealed class FakeOccupySeatCoordinator : IOccupySeatCoordinator
 
     public int StartCalls { get; private set; }
 
+    public int StopCalls { get; private set; }
+
     public Task StartAsync(OccupySeatPlan plan, CancellationToken cancellationToken = default)
     {
         StartCalls++;
@@ -728,8 +739,12 @@ internal sealed class FakeOccupySeatCoordinator : IOccupySeatCoordinator
         return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken = default)
+    public Task StopCompletion { get; set; } = Task.CompletedTask;
+
+    public async Task StopAsync(CancellationToken cancellationToken = default)
     {
+        StopCalls++;
+        await StopCompletion.WaitAsync(cancellationToken);
         _status = new CoordinatorStatus(
             CoordinatorTaskState.Completed,
             "占座",
@@ -737,7 +752,7 @@ internal sealed class FakeOccupySeatCoordinator : IOccupySeatCoordinator
             _status.StartedAt,
             DateTimeOffset.Now);
         StatusChanged?.Invoke(this, _status);
-        return Task.CompletedTask;
+
     }
 
     public CoordinatorStatus GetStatus() => _status;

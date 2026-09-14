@@ -9,7 +9,7 @@ using Avalonia.Media;
 
 namespace IGoLibrary.Tests;
 
-public sealed class MainWindowViewModelTests
+public sealed partial class MainWindowViewModelTests
 {
     [Fact]
     public async Task ValidateManualCookieAsync_CachesWechatNickname_AndKeepsItOnSignOut()
@@ -843,11 +843,14 @@ public sealed class MainWindowViewModelTests
     public async Task StartRandomAvailableSeatGrabAsync_StartsGrabCoordinatorWithoutSelectedSeats()
     {
         var library = new LibrarySummary(10, "library", "3", true, 120, 10, 0);
+        var libraries = new FakeLibraryService { LibrariesToLoad = [library] };
+        libraries.LayoutsByLibraryId[library.LibraryId] = new LibraryLayout(library.LibraryId, library.Name, library.Floor, true, 120, 10, 0, []);
         var grabCoordinator = new FakeGrabSeatCoordinator();
-        var viewModel = CreateViewModel(grabSeatCoordinator: grabCoordinator);
+        var viewModel = CreateViewModel(libraryService: libraries, grabSeatCoordinator: grabCoordinator);
 
         viewModel.IsAuthorized = true;
         viewModel.SelectedLibrary = library;
+        await viewModel.BindSelectedLibraryCommand.ExecuteAsync(null);
         viewModel.SelectedGrabTaskTargetIndex = 0;
         viewModel.ScheduledTimeText = "08:15:30";
 
@@ -865,14 +868,18 @@ public sealed class MainWindowViewModelTests
     public async Task StartRandomAvailableSeatGrabAsync_StartsTomorrowCoordinatorWithoutSelectedSeats()
     {
         var library = new LibrarySummary(10, "library", "3", true, 120, 10, 0);
+        var libraries = new FakeLibraryService { LibrariesToLoad = [library] };
+        libraries.LayoutsByLibraryId[library.LibraryId] = new LibraryLayout(library.LibraryId, library.Name, library.Floor, true, 120, 10, 0, []);
         var grabCoordinator = new FakeGrabSeatCoordinator();
         var tomorrowCoordinator = new FakeTomorrowReservationCoordinator();
         var viewModel = CreateViewModel(
+            libraryService: libraries,
             grabSeatCoordinator: grabCoordinator,
             tomorrowReservationCoordinator: tomorrowCoordinator);
 
         viewModel.IsAuthorized = true;
         viewModel.SelectedLibrary = library;
+        await viewModel.BindSelectedLibraryCommand.ExecuteAsync(null);
         viewModel.SelectedGrabTaskTargetIndex = 1;
         viewModel.ScheduledTimeText = "08:15:30";
 
@@ -889,23 +896,19 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task StartOccupyAsync_StartsCoordinatorWithScheduledReReserveTime()
+    public async Task StartOccupyAsync_StartsCoordinatorWithLeadTime()
     {
         var occupyCoordinator = new FakeOccupySeatCoordinator();
         var viewModel = CreateViewModel(occupySeatCoordinator: occupyCoordinator);
 
-        viewModel.SelectedOccupyReReserveTriggerModeIndex = 1;
         viewModel.ReReserveLeadMinutes = 2;
         viewModel.ReReserveDelaySeconds = 30;
-        viewModel.OccupyScheduledReReserveTimeText = "14:25:30";
 
         await viewModel.StartOccupyCommand.ExecuteAsync(null);
 
         Assert.Equal(1, occupyCoordinator.StartCalls);
         var plan = Assert.IsType<OccupySeatPlan>(occupyCoordinator.StartedPlan);
-        Assert.Equal(OccupyReReserveTriggerMode.ScheduledTime, plan.TriggerMode);
         Assert.Equal(TimeSpan.FromSeconds(150), plan.ReReserveLeadTime);
-        Assert.Equal(new TimeOnly(14, 25, 30), plan.ScheduledReReserveTime);
     }
 
     [Fact]
@@ -934,7 +937,6 @@ public sealed class MainWindowViewModelTests
             sessionService: sessionService,
             apiClient: apiClient);
 
-        viewModel.SelectedOccupyReReserveTriggerModeIndex = 0;
         viewModel.ReReserveLeadMinutes = 1;
         viewModel.ReReserveDelaySeconds = 0;
 

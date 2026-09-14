@@ -43,6 +43,11 @@ public partial class MainWindowViewModel(
     private readonly ObservableCollection<ReservationRecordViewModel> _homeReservationRecords = [];
     private IReadOnlyList<ReservationRecord> _reservationRecords = [];
     private readonly object _filterGate = new();
+    private readonly SemaphoreSlim _accountOperationGate = new(1, 1);
+    private bool _isSigningOut;
+    private int _accountGeneration;
+    private int _venueRequestGeneration;
+    private int? _seatLibraryId;
     private readonly DispatcherTimer _reservationCountdownTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private const int MaxDisplayedLogCharacters = 100_000;
     private CancellationTokenSource? _filteringCts;
@@ -172,8 +177,6 @@ public partial class MainWindowViewModel(
     public string[] GrabModes { get; } = ["极限速度", "随机延迟", "延迟 3 秒"];
 
     public string[] RefreshModes { get; } = ["固定间隔 10 秒", "随机 10~20 秒"];
-
-    public string[] OccupyReReserveTriggerModes { get; } = ["到期前", "指定时间"];
 
     public string[] GrabReservationStrategies { get; } = ["先获取列表判断状态", "直接发送预约请求"];
 
@@ -484,20 +487,10 @@ public partial class MainWindowViewModel(
     private bool HasActiveOccupyReservationCountdown => IsOccupyRunning && _currentReservation is not null;
 
     [ObservableProperty]
-    private int selectedOccupyReReserveTriggerModeIndex;
-
-    public bool IsOccupyBeforeExpirationMode => SelectedOccupyReReserveTriggerModeIndex == 0;
-
-    public bool IsOccupyScheduledTimeMode => SelectedOccupyReReserveTriggerModeIndex == 1;
-
-    [ObservableProperty]
     private int reReserveLeadMinutes = 1;
 
     [ObservableProperty]
     private int reReserveDelaySeconds;
-
-    [ObservableProperty]
-    private string occupyScheduledReReserveTimeText = "00:00:00";
 
     [ObservableProperty]
     private int selectedRefreshModeIndex;
@@ -637,9 +630,9 @@ public partial class MainWindowViewModel(
 
     public bool HasNoSelectedSeats => !HasSelectedSeats;
 
-    public bool CanEditGrabConfiguration => !IsGrabTaskActive;
+    public bool CanEditGrabConfiguration => !IsGrabTaskActive && !_isSigningOut;
 
-    public bool CanStartRandomAvailableSeatGrab => CanEditGrabConfiguration && SelectedLibrary is not null;
+    public bool CanStartRandomAvailableSeatGrab => CanEditGrabConfiguration && HasConsistentBoundVenue;
 
     public bool IsTodayGrabTarget => SelectedGrabTaskTargetIndex == 0;
 
@@ -779,18 +772,6 @@ public partial class MainWindowViewModel(
         UpdateReservationCountdown();
     }
 
-    partial void OnSelectedOccupyReReserveTriggerModeIndexChanged(int value)
-    {
-        OnPropertyChanged(nameof(IsOccupyBeforeExpirationMode));
-        OnPropertyChanged(nameof(IsOccupyScheduledTimeMode));
-        UpdateReservationCountdown();
-    }
-
-    partial void OnOccupyScheduledReReserveTimeTextChanged(string value)
-    {
-        UpdateReservationCountdown();
-    }
-
     partial void OnIsGrabTaskActiveChanged(bool value)
     {
         OnPropertyChanged(nameof(CanEditGrabConfiguration));
@@ -919,22 +900,30 @@ public partial class MainWindowViewModel(
 
             try
             {
-                var restored = await sessionService.RestoreAsync();
-                if (restored is not null)
+                await _accountOperationGate.WaitAsync();
+                try
                 {
-                    IsAuthorized = true;
-                    SessionSummary = $"已恢复会话：{restored.Source} / {restored.SavedAt:yyyy-MM-dd HH:mm:ss}";
-                    ManualCookieText = restored.Cookie;
-                    UpdateSidebarCookieExpiry(restored.Cookie);
-                    await NotifySessionRestoredAsync(restored.Cookie);
-                    await RefreshHomeUserDisplayNameAsync(restored.Cookie);
-                    await RefreshHomeUserStatisticsAsync(restored.Cookie);
-                    await TriggerAutomaticCreditSignInAsync(restored.Cookie);
-                    await LoadLibrariesAsync(restorePreferredSelection: true);
-                    if (SelectedLibrary is not null)
+                    var restored = await sessionService.RestoreAsync();
+                    if (restored is not null)
                     {
-                        await BindSelectedLibraryAsync();
+                        IsAuthorized = true;
+                        SessionSummary = $"已恢复会话：{restored.Source} / {restored.SavedAt:yyyy-MM-dd HH:mm:ss}";
+                        ManualCookieText = restored.Cookie;
+                        UpdateSidebarCookieExpiry(restored.Cookie);
+                        await NotifySessionRestoredAsync(restored.Cookie);
+                        await RefreshHomeUserDisplayNameAsync(restored.Cookie);
+                        await RefreshHomeUserStatisticsAsync(restored.Cookie);
+                        await TriggerAutomaticCreditSignInAsync(restored.Cookie);
+                        await LoadLibrariesAsync(restorePreferredSelection: true);
+                        if (SelectedLibrary is not null)
+                        {
+                            await BindSelectedLibraryCoreAsync();
+                        }
                     }
+                }
+                finally
+                {
+                    _accountOperationGate.Release();
                 }
             }
             catch (Exception ex)
@@ -997,6 +986,7 @@ public partial class MainWindowViewModel(
 
     partial void OnSelectedLibraryChanged(LibrarySummary? value)
     {
+        ++_venueRequestGeneration;
         OnPropertyChanged(nameof(CanStartRandomAvailableSeatGrab));
 
         if (!IsVenuePickerOpen || value is null || !IsAuthorized)
@@ -1172,42 +1162,97 @@ public partial class MainWindowViewModel(
 
     private async Task<bool> ParseCookieFromLinkAsync(string? linkText, bool notifyOnInvalidLink)
     {
-        string? reservedCode = null;
-        var shouldMarkCodeAsProcessed = false;
+        await _accountOperationGate.WaitAsync();
         try
         {
-            if (!CodeLinkParser.TryExtractCode(linkText, out var code))
-            {
-                if (notifyOnInvalidLink)
-                {
-                    await notificationService.ShowWarningAsync("链接无效", "未能从链接中提取 32 位 code。");
-                }
-
-                return false;
-            }
-
-            if (!TryReserveAuthCode(code))
-            {
-                activityLogService.Write(LogEntryKind.Info, "Auth", $"授权 code 已处理，跳过重复解析：{code}");
-                if (notifyOnInvalidLink)
-                {
-                    await notificationService.ShowInfoAsync("链接已处理", "该授权链接已处理过一次。如需重试，请重新从微信获取新的授权链接。");
-                }
-
-                return false;
-            }
-
-            reservedCode = code;
-            var cookie = await apiClient.GetCookieFromCodeAsync(code);
-            shouldMarkCodeAsProcessed = true;
-            ManualCookieText = cookie;
-            SessionSummary = "已获取 Cookie，等待验证";
-            SelectedTabIndex = 1;
-            await notificationService.ShowSuccessAsync("已成功获取 Cookie", BuildCookieFetchedMessage(cookie));
-
+            string? reservedCode = null;
+            var shouldMarkCodeAsProcessed = false;
             try
             {
-                var session = await sessionService.AuthenticateFromCookieAsync(cookie, RememberSession);
+                if (!CodeLinkParser.TryExtractCode(linkText, out var code))
+                {
+                    if (notifyOnInvalidLink)
+                    {
+                        await notificationService.ShowWarningAsync("链接无效", "未能从链接中提取 32 位 code。");
+                    }
+
+                    return false;
+                }
+
+                if (!TryReserveAuthCode(code))
+                {
+                    activityLogService.Write(LogEntryKind.Info, "Auth", $"授权 code 已处理，跳过重复解析：{code}");
+                    if (notifyOnInvalidLink)
+                    {
+                        await notificationService.ShowInfoAsync("链接已处理", "该授权链接已处理过一次。如需重试，请重新从微信获取新的授权链接。");
+                    }
+
+                    return false;
+                }
+
+                reservedCode = code;
+                var cookie = await apiClient.GetCookieFromCodeAsync(code);
+                shouldMarkCodeAsProcessed = true;
+                ManualCookieText = cookie;
+                SessionSummary = "已获取 Cookie，等待验证";
+                SelectedTabIndex = 1;
+                await notificationService.ShowSuccessAsync("已成功获取 Cookie", BuildCookieFetchedMessage(cookie));
+
+                try
+                {
+                    var session = await sessionService.AuthenticateFromCookieAsync(cookie, RememberSession);
+                    IsAuthorized = true;
+                    SessionSummary = $"登录成功：{session.Source} / {session.SavedAt:yyyy-MM-dd HH:mm:ss}";
+                    UpdateSidebarCookieExpiry(session.Cookie);
+                    await RefreshHomeUserDisplayNameAsync(session.Cookie);
+                    await RefreshHomeUserStatisticsAsync(session.Cookie);
+                    await TriggerAutomaticCreditSignInAsync(session.Cookie);
+                    await LoadLibrariesAsync(restorePreferredSelection: false);
+                }
+                catch (Exception ex)
+                {
+                    activityLogService.Write(LogEntryKind.Warning, "Auth", $"Cookie 已获取，但自动验证失败：{ex.Message}");
+                    await notificationService.ShowInfoAsync("已获取 Cookie", $"Cookie 已填入文本框，但自动验证失败：{ex.Message}");
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                activityLogService.Write(LogEntryKind.Error, "Auth", $"通过链接获取 Cookie 失败：{ex.Message}");
+                await notificationService.ShowWarningAsync("获取 Cookie 失败", ex.Message);
+                return false;
+            }
+            finally
+            {
+                if (!string.IsNullOrWhiteSpace(reservedCode))
+                {
+                    CompleteAuthCodeReservation(reservedCode, shouldMarkCodeAsProcessed);
+                }
+            }
+
+        }
+        finally
+        {
+            _accountOperationGate.Release();
+        }
+    }
+
+    [RelayCommand]
+    private async Task ValidateManualCookieAsync()
+    {
+        await _accountOperationGate.WaitAsync();
+        try
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(ManualCookieText))
+                {
+                    await notificationService.ShowWarningAsync("Cookie 为空", "请先输入 Cookie。");
+                    return;
+                }
+
+                var session = await sessionService.AuthenticateFromCookieAsync(ManualCookieText, RememberSession);
                 IsAuthorized = true;
                 SessionSummary = $"登录成功：{session.Source} / {session.SavedAt:yyyy-MM-dd HH:mm:ss}";
                 UpdateSidebarCookieExpiry(session.Cookie);
@@ -1215,139 +1260,133 @@ public partial class MainWindowViewModel(
                 await RefreshHomeUserStatisticsAsync(session.Cookie);
                 await TriggerAutomaticCreditSignInAsync(session.Cookie);
                 await LoadLibrariesAsync(restorePreferredSelection: false);
+                SelectedTabIndex = 1;
             }
             catch (Exception ex)
             {
-                activityLogService.Write(LogEntryKind.Warning, "Auth", $"Cookie 已获取，但自动验证失败：{ex.Message}");
-                await notificationService.ShowInfoAsync("已获取 Cookie", $"Cookie 已填入文本框，但自动验证失败：{ex.Message}");
+                activityLogService.Write(LogEntryKind.Error, "Auth", $"手动验证 Cookie 失败：{ex.Message}");
+                await notificationService.ShowWarningAsync("验证 Cookie 失败", ex.Message);
             }
 
-            return true;
-        }
-        catch (Exception ex)
-        {
-            activityLogService.Write(LogEntryKind.Error, "Auth", $"通过链接获取 Cookie 失败：{ex.Message}");
-            await notificationService.ShowWarningAsync("获取 Cookie 失败", ex.Message);
-            return false;
         }
         finally
         {
-            if (!string.IsNullOrWhiteSpace(reservedCode))
-            {
-                CompleteAuthCodeReservation(reservedCode, shouldMarkCodeAsProcessed);
-            }
-        }
-    }
-
-    [RelayCommand]
-    private async Task ValidateManualCookieAsync()
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(ManualCookieText))
-            {
-                await notificationService.ShowWarningAsync("Cookie 为空", "请先输入 Cookie。");
-                return;
-            }
-
-            var session = await sessionService.AuthenticateFromCookieAsync(ManualCookieText, RememberSession);
-            IsAuthorized = true;
-            SessionSummary = $"登录成功：{session.Source} / {session.SavedAt:yyyy-MM-dd HH:mm:ss}";
-            UpdateSidebarCookieExpiry(session.Cookie);
-            await RefreshHomeUserDisplayNameAsync(session.Cookie);
-            await RefreshHomeUserStatisticsAsync(session.Cookie);
-            await TriggerAutomaticCreditSignInAsync(session.Cookie);
-            await LoadLibrariesAsync(restorePreferredSelection: false);
-            SelectedTabIndex = 1;
-        }
-        catch (Exception ex)
-        {
-            activityLogService.Write(LogEntryKind.Error, "Auth", $"手动验证 Cookie 失败：{ex.Message}");
-            await notificationService.ShowWarningAsync("验证 Cookie 失败", ex.Message);
+            _accountOperationGate.Release();
         }
     }
 
     [RelayCommand]
     private async Task RestoreSessionAsync()
     {
+        await _accountOperationGate.WaitAsync();
         try
         {
-            var session = await sessionService.RestoreAsync();
-            if (session is null)
+            try
             {
-                await notificationService.ShowInfoAsync("没有会话", "本地没有可恢复的会话。");
-                return;
+                var session = await sessionService.RestoreAsync();
+                if (session is null)
+                {
+                    await notificationService.ShowInfoAsync("没有会话", "本地没有可恢复的会话。");
+                    return;
+                }
+
+                IsAuthorized = true;
+                SessionSummary = $"已恢复会话：{session.Source} / {session.SavedAt:yyyy-MM-dd HH:mm:ss}";
+                ManualCookieText = session.Cookie;
+                UpdateSidebarCookieExpiry(session.Cookie);
+                await NotifySessionRestoredAsync(session.Cookie);
+                await RefreshHomeUserDisplayNameAsync(session.Cookie);
+                await RefreshHomeUserStatisticsAsync(session.Cookie);
+                await TriggerAutomaticCreditSignInAsync(session.Cookie);
+                await LoadLibrariesAsync(restorePreferredSelection: false);
+            }
+            catch (Exception ex)
+            {
+                activityLogService.Write(LogEntryKind.Error, "Auth", $"恢复会话失败：{ex.Message}");
+                await notificationService.ShowWarningAsync("恢复会话失败", ex.Message);
             }
 
-            IsAuthorized = true;
-            SessionSummary = $"已恢复会话：{session.Source} / {session.SavedAt:yyyy-MM-dd HH:mm:ss}";
-            ManualCookieText = session.Cookie;
-            UpdateSidebarCookieExpiry(session.Cookie);
-            await NotifySessionRestoredAsync(session.Cookie);
-            await RefreshHomeUserDisplayNameAsync(session.Cookie);
-            await RefreshHomeUserStatisticsAsync(session.Cookie);
-            await TriggerAutomaticCreditSignInAsync(session.Cookie);
-            await LoadLibrariesAsync(restorePreferredSelection: false);
         }
-        catch (Exception ex)
+        finally
         {
-            activityLogService.Write(LogEntryKind.Error, "Auth", $"恢复会话失败：{ex.Message}");
-            await notificationService.ShowWarningAsync("恢复会话失败", ex.Message);
+            _accountOperationGate.Release();
         }
     }
 
     [RelayCommand]
     private async Task SignOutAsync()
     {
-        await sessionService.SignOutAsync();
-        await ClearStoredLibrarySelectionAsync();
-        CancelFiltering();
-        IsGrabSeatSelectionOverlayOpen = false;
-        _draftSelectedSeatKeys.Clear();
-        _committedSelectedSeatKeys.Clear();
-        AvailableLibraries.Clear();
-        _allSeats.Clear();
-        VisibleSeats.Clear();
-        OnPropertyChanged(nameof(HasSeatLayout));
-        OnPropertyChanged(nameof(HasNoSeatLayout));
-        OnPropertyChanged(nameof(ShowSeatFilterEmptyState));
-        RefreshSelectedSeatsPresentation();
-        UpdateDraftSelectionPresentation();
-        VisibleSeatResultCount = 0;
-        SelectedLibrary = null;
-        IsAuthorized = false;
-        SessionSummary = "未登录";
-        ClearSidebarCookieExpiry();
-        LibrarySummary = "未绑定场馆";
-        BoundLibraryTitle = "当前绑定：未锁定目标场馆";
-        BoundAvailableSeatsText = "--";
-        VenueStatusText = "未绑定";
-        IsVenueOpen = false;
-        VenueName = "未锁定场馆";
-        VenueFloor = GetUnboundVenueFloorText();
-        VenueAvailableSeatsText = "--";
-        VenueOpenTimeText = "--";
-        VenueCloseTimeText = "--";
-        _lockedLibrarySummary = null;
-        _lockedVenueStatusText = "未绑定";
-        _lockedVenueOpen = false;
-        _lockedVenueName = "未锁定场馆";
-        _lockedVenueFloor = GetUnboundVenueFloorText();
-        _lockedVenueAvailableSeatsText = "--";
-        _lockedVenueOpenTimeText = "--";
-        _lockedVenueCloseTimeText = "--";
-        IsCurrentLocked = false;
-        HasActiveVenuePreview = false;
-        OnPropertyChanged(nameof(HasLockedVenue));
-        OnPropertyChanged(nameof(ShowVenueChangeButton));
-        OnPropertyChanged(nameof(ShowVenueCancelPreviewButton));
-        OnPropertyChanged(nameof(CanCancelVenuePreview));
-        UpdateHomeLockedVenuePresentation();
-        UpdateHomeHeroPresentation(DateTimeOffset.Now);
-        UpdateHomeSystemInfoPresentation();
-        HomeStudyTimeText = HomeRankText = HomeDayLongestText = HomeCreditText = "--";
-        UpdateReservationPresentation([]);
-        ApplyGrabStatus(CoordinatorStatus.Idle("抢座"));
+        _isSigningOut = true;
+        OnPropertyChanged(nameof(CanEditGrabConfiguration));
+        OnPropertyChanged(nameof(CanStartRandomAvailableSeatGrab));
+        await _accountOperationGate.WaitAsync();
+        try
+        {
+            ++_accountGeneration;
+            ++_venueRequestGeneration;
+            await Task.WhenAll(grabSeatCoordinator.StopAsync(), tomorrowReservationCoordinator.StopAsync(), occupySeatCoordinator.StopAsync());
+            await sessionService.SignOutAsync();
+            _seatLibraryId = null;
+            await ClearStoredLibrarySelectionAsync();
+            CancelFiltering();
+            IsGrabSeatSelectionOverlayOpen = false;
+            _draftSelectedSeatKeys.Clear();
+            _committedSelectedSeatKeys.Clear();
+            AvailableLibraries.Clear();
+            _allSeats.Clear();
+            VisibleSeats.Clear();
+            OnPropertyChanged(nameof(HasSeatLayout));
+            OnPropertyChanged(nameof(HasNoSeatLayout));
+            OnPropertyChanged(nameof(ShowSeatFilterEmptyState));
+            RefreshSelectedSeatsPresentation();
+            UpdateDraftSelectionPresentation();
+            VisibleSeatResultCount = 0;
+            SelectedLibrary = null;
+            IsAuthorized = false;
+            SessionSummary = "未登录";
+            ManualCookieText = string.Empty;
+            QrLinkText = string.Empty;
+            ClearSidebarCookieExpiry();
+            LibrarySummary = "未绑定场馆";
+            BoundLibraryTitle = "当前绑定：未锁定目标场馆";
+            BoundAvailableSeatsText = "--";
+            VenueStatusText = "未绑定";
+            IsVenueOpen = false;
+            VenueName = "未锁定场馆";
+            VenueFloor = GetUnboundVenueFloorText();
+            VenueAvailableSeatsText = "--";
+            VenueOpenTimeText = "--";
+            VenueCloseTimeText = "--";
+            _lockedLibrarySummary = null;
+            _lockedVenueStatusText = "未绑定";
+            _lockedVenueOpen = false;
+            _lockedVenueName = "未锁定场馆";
+            _lockedVenueFloor = GetUnboundVenueFloorText();
+            _lockedVenueAvailableSeatsText = "--";
+            _lockedVenueOpenTimeText = "--";
+            _lockedVenueCloseTimeText = "--";
+            IsCurrentLocked = false;
+            HasActiveVenuePreview = false;
+            OnPropertyChanged(nameof(HasLockedVenue));
+            OnPropertyChanged(nameof(ShowVenueChangeButton));
+            OnPropertyChanged(nameof(ShowVenueCancelPreviewButton));
+            OnPropertyChanged(nameof(CanCancelVenuePreview));
+            UpdateHomeLockedVenuePresentation();
+            UpdateHomeHeroPresentation(DateTimeOffset.Now);
+            UpdateHomeSystemInfoPresentation();
+            HomeStudyTimeText = HomeRankText = HomeDayLongestText = HomeCreditText = "--";
+            UpdateReservationPresentation([]);
+            ApplyGrabStatus(grabSeatCoordinator.GetStatus());
+            ApplyOccupyStatus(occupySeatCoordinator.GetStatus());
+
+        }
+        finally
+        {
+            _accountOperationGate.Release();
+            _isSigningOut = false;
+            OnPropertyChanged(nameof(CanEditGrabConfiguration));
+            OnPropertyChanged(nameof(CanStartRandomAvailableSeatGrab));
+        }
     }
 
     [RelayCommand]
@@ -1358,9 +1397,11 @@ public partial class MainWindowViewModel(
 
     private async Task LoadLibrariesAsync(bool restorePreferredSelection, int? preferredLibraryId = null)
     {
+        var generation = _accountGeneration;
         try
         {
             var libraries = await libraryService.LoadLibrariesAsync();
+            if (generation != _accountGeneration) return;
             AvailableLibraries.Clear();
             foreach (var library in libraries)
             {
@@ -1380,6 +1421,7 @@ public partial class MainWindowViewModel(
             }
 
             var settings = await settingsService.LoadAsync();
+            if (generation != _accountGeneration) return;
             SelectedLibrary = AvailableLibraries.FirstOrDefault(x => x.LibraryId == settings.LastLibraryId)
                 ?? AvailableLibraries.FirstOrDefault();
         }
@@ -1393,6 +1435,22 @@ public partial class MainWindowViewModel(
     [RelayCommand]
     private async Task BindSelectedLibraryAsync()
     {
+        if (_isSigningOut) return;
+        var generation = _accountGeneration;
+        await _accountOperationGate.WaitAsync();
+        try
+        {
+            if (_isSigningOut || generation != _accountGeneration) return;
+            await BindSelectedLibraryCoreAsync();
+        }
+        finally
+        {
+            _accountOperationGate.Release();
+        }
+    }
+
+    private async Task BindSelectedLibraryCoreAsync()
+    {
         try
         {
             if (SelectedLibrary is null)
@@ -1401,10 +1459,16 @@ public partial class MainWindowViewModel(
                 return;
             }
 
-            var layout = await libraryService.BindLibraryAsync(SelectedLibrary.LibraryId);
-            var preserveSelection = _lockedLibrarySummary?.LibraryId == SelectedLibrary.LibraryId;
+            if (IsGrabTaskActive || _isSigningOut) return;
+            var library = SelectedLibrary;
+            var generation = _accountGeneration;
+            var request = ++_venueRequestGeneration;
+            var layout = await libraryService.BindLibraryAsync(library.LibraryId);
+            if (generation != _accountGeneration || request != _venueRequestGeneration || SelectedLibrary?.LibraryId != library.LibraryId) return;
+            var preserveSelection = _lockedLibrarySummary?.LibraryId == library.LibraryId;
             UpdateBoundLibraryPresentation(layout);
-            await LoadVenueRulePresentationAsync(SelectedLibrary.LibraryId, persistLockedSnapshot: true);
+            await LoadVenueRulePresentationAsync(library.LibraryId, persistLockedSnapshot: true);
+            if (generation != _accountGeneration || SelectedLibrary?.LibraryId != library.LibraryId) return;
             await PopulateSeatsAsync(layout, preserveSelection);
             await LoadFavoritesAsync();
             await RefreshReservationAsync(showNotificationOnError: false);
@@ -1421,7 +1485,10 @@ public partial class MainWindowViewModel(
     {
         try
         {
+            var library = GetBoundVenueOrThrow();
+            var generation = _accountGeneration;
             var layout = await libraryService.RefreshBoundLibraryAsync();
+            if (generation != _accountGeneration || SelectedLibrary?.LibraryId != library.LibraryId) return;
             UpdateBoundLibraryPresentation(layout);
             await PopulateSeatsAsync(layout, preserveSelection: true);
             await LoadFavoritesAsync();
@@ -1578,6 +1645,8 @@ public partial class MainWindowViewModel(
             return;
         }
 
+        ++_venueRequestGeneration;
+        IsVenuePickerOpen = false;
         SelectedLibrary = _lockedLibrarySummary;
         VenueStatusText = _lockedVenueStatusText;
         IsVenueOpen = _lockedVenueOpen;
@@ -1601,13 +1670,16 @@ public partial class MainWindowViewModel(
 
         try
         {
+            var library = GetBoundVenueOrThrow();
+            var generation = _accountGeneration;
             var selected = _allSeats
                 .Where(x => x.IsSelected)
                 .Select(x => new TrackedSeat(x.SeatKey, x.SeatName))
                 .ToList();
-            var existing = await libraryService.GetFavoritesAsync(SelectedLibrary.LibraryId);
+            var existing = await libraryService.GetFavoritesAsync(library.LibraryId);
             var merged = MergeTrackedSeats(existing, selected);
-            await libraryService.SaveFavoritesAsync(SelectedLibrary.LibraryId, merged);
+            await libraryService.SaveFavoritesAsync(library.LibraryId, merged);
+            if (generation != _accountGeneration || _seatLibraryId != library.LibraryId) return;
             ApplyFavoriteStates(merged.Select(x => x.SeatKey), syncSelection: false);
         }
         catch (Exception ex)
@@ -1627,15 +1699,18 @@ public partial class MainWindowViewModel(
 
         try
         {
+            var library = GetBoundVenueOrThrow();
+            var generation = _accountGeneration;
             var selectedSeatKeys = _allSeats
                 .Where(x => x.IsSelected)
                 .Select(x => x.SeatKey)
                 .ToHashSet(StringComparer.Ordinal);
-            var existing = await libraryService.GetFavoritesAsync(SelectedLibrary.LibraryId);
+            var existing = await libraryService.GetFavoritesAsync(library.LibraryId);
             var remaining = existing
                 .Where(x => !selectedSeatKeys.Contains(x.SeatKey))
                 .ToList();
-            await libraryService.SaveFavoritesAsync(SelectedLibrary.LibraryId, remaining);
+            await libraryService.SaveFavoritesAsync(library.LibraryId, remaining);
+            if (generation != _accountGeneration || _seatLibraryId != library.LibraryId) return;
             ApplyFavoriteStates(remaining.Select(x => x.SeatKey), syncSelection: false);
         }
         catch (Exception ex)
@@ -1655,7 +1730,10 @@ public partial class MainWindowViewModel(
 
         try
         {
-            var localFavorites = await libraryService.GetFavoritesAsync(SelectedLibrary.LibraryId);
+            var library = GetBoundVenueOrThrow();
+            var generation = _accountGeneration;
+            var localFavorites = await libraryService.GetFavoritesAsync(library.LibraryId);
+            if (generation != _accountGeneration || _seatLibraryId != library.LibraryId) return;
             ApplyFavoriteStates(localFavorites.Select(x => x.SeatKey), syncSelection: false);
             await notificationService.ShowInfoAsync("收藏已加载", $"已加载 {localFavorites.Count} 个收藏座位。");
         }
@@ -1681,100 +1759,140 @@ public partial class MainWindowViewModel(
         ApplySelectionToSeatItems(Array.Empty<string>());
     }
 
+    private bool HasConsistentBoundVenue => SelectedLibrary is not null &&
+        libraryService.BoundLibrary?.LibraryId == SelectedLibrary.LibraryId &&
+        _seatLibraryId == SelectedLibrary.LibraryId;
+
+    private LibrarySummary GetBoundVenueOrThrow()
+    {
+        if (!HasConsistentBoundVenue || _isSigningOut)
+        {
+            throw new InvalidOperationException("请先保存并锁定当前场馆，等待座位加载完成后再操作。");
+        }
+
+        return libraryService.BoundLibrary!;
+    }
+
     [RelayCommand]
     private async Task StartGrabAsync()
     {
-        if (SelectedLibrary is null)
-        {
-            await notificationService.ShowWarningAsync("未绑定场馆", "请先绑定场馆。");
-            return;
-        }
-
-        var selectedSeats = SelectedSeats.ToList();
-        if (selectedSeats.Count == 0)
-        {
-            await notificationService.ShowWarningAsync("未选择座位", "请至少选中一个目标座位。");
-            return;
-        }
-
+        if (_isSigningOut) return;
+        var generation = _accountGeneration;
+        await _accountOperationGate.WaitAsync();
         try
         {
-            var mode = (GrabMode)SelectedGrabModeIndex;
-            var scheduledStart = ParseScheduledTime();
-            if (IsTomorrowReservationTarget)
+            if (_isSigningOut || generation != _accountGeneration) return;
+            if (SelectedLibrary is null)
             {
-                var plan = new TomorrowReservationPlan(
-                    SelectedLibrary.LibraryId,
-                    SelectedLibrary.Name,
-                    selectedSeats,
-                    mode,
-                    GrabStrategyFactory.FromMode(mode),
-                    scheduledStart);
-                await RecordAndStartAsync("TomorrowReservation", "Desktop", () => tomorrowReservationCoordinator.StartAsync(plan));
+                await notificationService.ShowWarningAsync("未绑定场馆", "请先绑定场馆。");
+                return;
             }
-            else
+
+            var selectedSeats = SelectedSeats.ToList();
+            if (selectedSeats.Count == 0)
             {
-                await PersistGrabReservationStrategyAsync();
-                var plan = new GrabSeatPlan(
-                    SelectedLibrary.LibraryId,
-                    SelectedLibrary.Name,
-                    selectedSeats,
-                    mode,
-                    GrabStrategyFactory.FromMode(mode),
-                    scheduledStart);
-                await RecordAndStartAsync("GrabSeat", "Desktop", () => grabSeatCoordinator.StartAsync(plan));
+                await notificationService.ShowWarningAsync("未选择座位", "请至少选中一个目标座位。");
+                return;
             }
+
+            try
+            {
+                var library = GetBoundVenueOrThrow();
+                var mode = (GrabMode)SelectedGrabModeIndex;
+                var scheduledStart = ParseScheduledTime();
+                if (IsTomorrowReservationTarget)
+                {
+                    var plan = new TomorrowReservationPlan(
+                        library.LibraryId,
+                        library.Name,
+                        selectedSeats,
+                        mode,
+                        GrabStrategyFactory.FromMode(mode),
+                        scheduledStart);
+                    await RecordAndStartAsync("TomorrowReservation", "Desktop", () => tomorrowReservationCoordinator.StartAsync(plan));
+                }
+                else
+                {
+                    await PersistGrabReservationStrategyAsync();
+                    var plan = new GrabSeatPlan(
+                        library.LibraryId,
+                        library.Name,
+                        selectedSeats,
+                        mode,
+                        GrabStrategyFactory.FromMode(mode),
+                        scheduledStart);
+                    await RecordAndStartAsync("GrabSeat", "Desktop", () => grabSeatCoordinator.StartAsync(plan));
+                }
+            }
+            catch (Exception ex)
+            {
+                activityLogService.Write(LogEntryKind.Error, "Grab", $"启动抢座失败：{ex.Message}");
+                await notificationService.ShowWarningAsync("启动抢座失败", ex.Message);
+            }
+
         }
-        catch (Exception ex)
+        finally
         {
-            activityLogService.Write(LogEntryKind.Error, "Grab", $"启动抢座失败：{ex.Message}");
-            await notificationService.ShowWarningAsync("启动抢座失败", ex.Message);
+            _accountOperationGate.Release();
         }
     }
 
     [RelayCommand]
     private async Task StartRandomAvailableSeatGrabAsync()
     {
-        if (SelectedLibrary is null)
-        {
-            await notificationService.ShowWarningAsync("未绑定场馆", "请先绑定场馆。");
-            return;
-        }
-
+        if (_isSigningOut) return;
+        var generation = _accountGeneration;
+        await _accountOperationGate.WaitAsync();
         try
         {
-            var mode = (GrabMode)SelectedGrabModeIndex;
-            var scheduledStart = ParseScheduledTime();
-            if (IsTomorrowReservationTarget)
+            if (_isSigningOut || generation != _accountGeneration) return;
+            if (SelectedLibrary is null)
             {
-                var tomorrowPlan = new TomorrowReservationPlan(
-                    SelectedLibrary.LibraryId,
-                    SelectedLibrary.Name,
+                await notificationService.ShowWarningAsync("未绑定场馆", "请先绑定场馆。");
+                return;
+            }
+
+            try
+            {
+                var library = GetBoundVenueOrThrow();
+                var mode = (GrabMode)SelectedGrabModeIndex;
+                var scheduledStart = ParseScheduledTime();
+                if (IsTomorrowReservationTarget)
+                {
+                    var tomorrowPlan = new TomorrowReservationPlan(
+                        library.LibraryId,
+                        library.Name,
+                        [],
+                        mode,
+                        GrabStrategyFactory.FromMode(mode),
+                        scheduledStart,
+                        UseRandomAvailableSeat: true);
+
+                    await RecordAndStartAsync("TomorrowReservation", "Desktop", () => tomorrowReservationCoordinator.StartAsync(tomorrowPlan));
+                    return;
+                }
+
+                var plan = new GrabSeatPlan(
+                    library.LibraryId,
+                    library.Name,
                     [],
                     mode,
                     GrabStrategyFactory.FromMode(mode),
                     scheduledStart,
                     UseRandomAvailableSeat: true);
 
-                await RecordAndStartAsync("TomorrowReservation", "Desktop", () => tomorrowReservationCoordinator.StartAsync(tomorrowPlan));
-                return;
+                await RecordAndStartAsync("GrabSeat", "Desktop", () => grabSeatCoordinator.StartAsync(plan));
+            }
+            catch (Exception ex)
+            {
+                activityLogService.Write(LogEntryKind.Error, "Grab", $"启动随机空座抢座失败：{ex.Message}");
+                await notificationService.ShowWarningAsync("启动随机空座抢座失败", ex.Message);
             }
 
-            var plan = new GrabSeatPlan(
-                SelectedLibrary.LibraryId,
-                SelectedLibrary.Name,
-                [],
-                mode,
-                GrabStrategyFactory.FromMode(mode),
-                scheduledStart,
-                UseRandomAvailableSeat: true);
-
-            await RecordAndStartAsync("GrabSeat", "Desktop", () => grabSeatCoordinator.StartAsync(plan));
         }
-        catch (Exception ex)
+        finally
         {
-            activityLogService.Write(LogEntryKind.Error, "Grab", $"启动随机空座抢座失败：{ex.Message}");
-            await notificationService.ShowWarningAsync("启动随机空座抢座失败", ex.Message);
+            _accountOperationGate.Release();
         }
     }
 
@@ -1801,6 +1919,7 @@ public partial class MainWindowViewModel(
 
     private async Task RefreshReservationAsync(bool showNotificationOnError)
     {
+        var generation = _accountGeneration;
         var session = sessionService.CurrentSession;
         if (session is null)
         {
@@ -1821,6 +1940,7 @@ public partial class MainWindowViewModel(
             var statisticsTask = RefreshHomeUserStatisticsAsync(session.Cookie);
             await Task.WhenAll(recordsTask, nicknameTask, statisticsTask);
             var records = await recordsTask;
+            if (generation != _accountGeneration) return;
             UpdateReservationPresentation(records);
         }
         catch (Exception ex)
@@ -1853,158 +1973,176 @@ public partial class MainWindowViewModel(
     [RelayCommand]
     private async Task CancelCurrentReservationAsync()
     {
-        if (_currentReservation is null || IsCancellingCurrentReservation)
-        {
-            return;
-        }
-
-        var session = sessionService.CurrentSession;
-        if (session is null)
-        {
-            await notificationService.ShowWarningAsync("未登录", "当前会话已失效，请重新授权后再操作。");
-            return;
-        }
-
-        var reservation = _currentReservation;
-        var confirmed = await confirmationDialogService.ConfirmAsync(
-            reservation.IsCheckedIn ? "确认退座" : "确认取消预约",
-            reservation.IsCheckedIn
-                ? $"确定要退出 {reservation.LibraryName} {reservation.SeatName} 的学习吗？"
-                : $"确定要取消 {reservation.LibraryName} {reservation.SeatName} 的预约吗？",
-            reservation.IsCheckedIn ? "退座" : "取消预约");
-        if (!confirmed)
-        {
-            return;
-        }
-
-        IsCancellingCurrentReservation = true;
-
+        await _accountOperationGate.WaitAsync();
         try
         {
-            if (IsOccupyRunning)
+            if (_currentReservation is null || IsCancellingCurrentReservation)
             {
-                try
-                {
-                    await occupySeatCoordinator.StopAsync();
-                }
-                catch (Exception ex)
-                {
-                    activityLogService.Write(LogEntryKind.Warning, "Occupy", $"取消预约前停止占座失败：{ex.Message}");
-                }
-            }
-
-            var cancelled = await apiClient.CancelReservationAsync(session.Cookie, reservation.ReservationToken);
-            if (!cancelled)
-            {
-                activityLogService.Write(LogEntryKind.Warning, "Occupy", $"{reservation.SeatName} 取消预约失败，接口未返回成功结果。");
-                await notificationService.ShowWarningAsync("取消预约失败", "接口未返回成功结果，请稍后重试。");
                 return;
             }
 
-            activityLogService.Write(
-                LogEntryKind.Success,
-                "Occupy",
-                reservation.IsCheckedIn ? $"{reservation.SeatName} 已手动退座。" : $"{reservation.SeatName} 已手动取消预约。");
-            RemoveCancelledReservationFromPresentation(reservation);
-            await notificationService.ShowSuccessAsync(
-                reservation.IsCheckedIn ? "已退座" : "已取消预约",
-                reservation.IsCheckedIn ? $"{reservation.SeatName} 已退座。" : $"{reservation.SeatName} 已取消预约。");
-        }
-        catch (Exception ex)
-        {
-            activityLogService.Write(LogEntryKind.Error, "Occupy", $"取消预约失败：{ex.Message}");
-            await notificationService.ShowWarningAsync("取消预约失败", ex.Message);
+            var session = sessionService.CurrentSession;
+            if (session is null)
+            {
+                await notificationService.ShowWarningAsync("未登录", "当前会话已失效，请重新授权后再操作。");
+                return;
+            }
+
+            var reservation = _currentReservation;
+            var confirmed = await confirmationDialogService.ConfirmAsync(
+                reservation.IsCheckedIn ? "确认退座" : "确认取消预约",
+                reservation.IsCheckedIn
+                    ? $"确定要退出 {reservation.LibraryName} {reservation.SeatName} 的学习吗？"
+                    : $"确定要取消 {reservation.LibraryName} {reservation.SeatName} 的预约吗？",
+                reservation.IsCheckedIn ? "退座" : "取消预约");
+            if (!confirmed)
+            {
+                return;
+            }
+
+            IsCancellingCurrentReservation = true;
+
+            try
+            {
+                if (IsOccupyRunning)
+                {
+                    try
+                    {
+                        await occupySeatCoordinator.StopAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        activityLogService.Write(LogEntryKind.Warning, "Occupy", $"取消预约前停止占座失败：{ex.Message}");
+                    }
+                }
+
+                var cancelled = await apiClient.CancelReservationAsync(session.Cookie, reservation.ReservationToken);
+                if (!cancelled)
+                {
+                    activityLogService.Write(LogEntryKind.Warning, "Occupy", $"{reservation.SeatName} 取消预约失败，接口未返回成功结果。");
+                    await notificationService.ShowWarningAsync("取消预约失败", "接口未返回成功结果，请稍后重试。");
+                    return;
+                }
+
+                activityLogService.Write(
+                    LogEntryKind.Success,
+                    "Occupy",
+                    reservation.IsCheckedIn ? $"{reservation.SeatName} 已手动退座。" : $"{reservation.SeatName} 已手动取消预约。");
+                RemoveCancelledReservationFromPresentation(reservation);
+                await notificationService.ShowSuccessAsync(
+                    reservation.IsCheckedIn ? "已退座" : "已取消预约",
+                    reservation.IsCheckedIn ? $"{reservation.SeatName} 已退座。" : $"{reservation.SeatName} 已取消预约。");
+            }
+            catch (Exception ex)
+            {
+                activityLogService.Write(LogEntryKind.Error, "Occupy", $"取消预约失败：{ex.Message}");
+                await notificationService.ShowWarningAsync("取消预约失败", ex.Message);
+            }
+            finally
+            {
+                IsCancellingCurrentReservation = false;
+            }
+
         }
         finally
         {
-            IsCancellingCurrentReservation = false;
+            _accountOperationGate.Release();
         }
     }
 
     [RelayCommand(CanExecute = nameof(CanCancelReservationRecord))]
     private async Task CancelReservationRecordAsync(ReservationRecordViewModel? recordViewModel)
     {
-        if (recordViewModel is null || IsCancellingCurrentReservation)
-        {
-            return;
-        }
-
-        var reservation = recordViewModel.Record;
-        if (!reservation.CanCancel)
-        {
-            await notificationService.ShowWarningAsync("无法操作", "这条预约记录缺少操作所需的信息，请刷新预约记录后重试。");
-            return;
-        }
-
-        var session = sessionService.CurrentSession;
-        if (session is null)
-        {
-            await notificationService.ShowWarningAsync("未登录", "当前会话已失效，请重新授权后再操作。");
-            return;
-        }
-
-        var confirmed = await confirmationDialogService.ConfirmAsync(
-            reservation.IsCheckedIn ? "确认退座" : "确认取消预约",
-            reservation.IsCheckedIn
-                ? $"确定要退出 {GetReservationLogName(reservation)} 的学习吗？"
-                : $"确定要取消 {GetReservationLogName(reservation)} 吗？",
-            reservation.IsCheckedIn ? "退座" : "取消预约");
-        if (!confirmed)
-        {
-            return;
-        }
-
-        IsCancellingCurrentReservation = true;
-
+        await _accountOperationGate.WaitAsync();
         try
         {
-            if (reservation.Kind == ReservationRecordKind.Today && IsOccupyRunning)
+            if (recordViewModel is null || IsCancellingCurrentReservation)
             {
-                try
-                {
-                    await occupySeatCoordinator.StopAsync();
-                }
-                catch (Exception ex)
-                {
-                    activityLogService.Write(LogEntryKind.Warning, "Occupy", $"取消预约前停止占座失败：{ex.Message}");
-                }
-            }
-
-            var cancelled = reservation.Kind switch
-            {
-                ReservationRecordKind.Today => await apiClient.CancelReservationAsync(session.Cookie, reservation.ReservationToken),
-                ReservationRecordKind.Tomorrow => await apiClient.CancelPrereserveAsync(session.Cookie),
-                _ => false
-            };
-
-            if (!cancelled)
-            {
-                activityLogService.Write(LogEntryKind.Warning, "Occupy", $"{GetReservationLogName(reservation)} 取消预约失败，接口未返回成功结果。");
-                await notificationService.ShowWarningAsync("取消预约失败", "接口未返回成功结果，请稍后重试。");
                 return;
             }
 
-            activityLogService.Write(
-                LogEntryKind.Success,
-                "Occupy",
+            var reservation = recordViewModel.Record;
+            if (!reservation.CanCancel)
+            {
+                await notificationService.ShowWarningAsync("无法操作", "这条预约记录缺少操作所需的信息，请刷新预约记录后重试。");
+                return;
+            }
+
+            var session = sessionService.CurrentSession;
+            if (session is null)
+            {
+                await notificationService.ShowWarningAsync("未登录", "当前会话已失效，请重新授权后再操作。");
+                return;
+            }
+
+            var confirmed = await confirmationDialogService.ConfirmAsync(
+                reservation.IsCheckedIn ? "确认退座" : "确认取消预约",
                 reservation.IsCheckedIn
-                    ? $"{GetReservationLogName(reservation)} 已手动退座。"
-                    : $"{GetReservationLogName(reservation)} 已手动取消预约。");
-            RemoveCancelledReservationFromPresentation(reservation);
-            await notificationService.ShowSuccessAsync(
-                reservation.IsCheckedIn ? "已退座" : "已取消预约",
-                reservation.IsCheckedIn
-                    ? $"{GetReservationLogName(reservation)} 已退座。"
-                    : $"{GetReservationLogName(reservation)} 已取消预约。");
-        }
-        catch (Exception ex)
-        {
-            activityLogService.Write(LogEntryKind.Error, "Occupy", $"取消预约失败：{ex.Message}");
-            await notificationService.ShowWarningAsync("取消预约失败", ex.Message);
+                    ? $"确定要退出 {GetReservationLogName(reservation)} 的学习吗？"
+                    : $"确定要取消 {GetReservationLogName(reservation)} 吗？",
+                reservation.IsCheckedIn ? "退座" : "取消预约");
+            if (!confirmed)
+            {
+                return;
+            }
+
+            IsCancellingCurrentReservation = true;
+
+            try
+            {
+                if (reservation.Kind == ReservationRecordKind.Today && IsOccupyRunning)
+                {
+                    try
+                    {
+                        await occupySeatCoordinator.StopAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        activityLogService.Write(LogEntryKind.Warning, "Occupy", $"取消预约前停止占座失败：{ex.Message}");
+                    }
+                }
+
+                var cancelled = reservation.Kind switch
+                {
+                    ReservationRecordKind.Today => await apiClient.CancelReservationAsync(session.Cookie, reservation.ReservationToken),
+                    ReservationRecordKind.Tomorrow => await apiClient.CancelPrereserveAsync(session.Cookie),
+                    _ => false
+                };
+
+                if (!cancelled)
+                {
+                    activityLogService.Write(LogEntryKind.Warning, "Occupy", $"{GetReservationLogName(reservation)} 取消预约失败，接口未返回成功结果。");
+                    await notificationService.ShowWarningAsync("取消预约失败", "接口未返回成功结果，请稍后重试。");
+                    return;
+                }
+
+                activityLogService.Write(
+                    LogEntryKind.Success,
+                    "Occupy",
+                    reservation.IsCheckedIn
+                        ? $"{GetReservationLogName(reservation)} 已手动退座。"
+                        : $"{GetReservationLogName(reservation)} 已手动取消预约。");
+                RemoveCancelledReservationFromPresentation(reservation);
+                await notificationService.ShowSuccessAsync(
+                    reservation.IsCheckedIn ? "已退座" : "已取消预约",
+                    reservation.IsCheckedIn
+                        ? $"{GetReservationLogName(reservation)} 已退座。"
+                        : $"{GetReservationLogName(reservation)} 已取消预约。");
+            }
+            catch (Exception ex)
+            {
+                activityLogService.Write(LogEntryKind.Error, "Occupy", $"取消预约失败：{ex.Message}");
+                await notificationService.ShowWarningAsync("取消预约失败", ex.Message);
+            }
+            finally
+            {
+                IsCancellingCurrentReservation = false;
+            }
+
         }
         finally
         {
-            IsCancellingCurrentReservation = false;
+            _accountOperationGate.Release();
         }
     }
 
@@ -2056,25 +2194,29 @@ public partial class MainWindowViewModel(
     [RelayCommand]
     private async Task StartOccupyAsync()
     {
+        if (_isSigningOut) return;
+        var generation = _accountGeneration;
+        await _accountOperationGate.WaitAsync();
         try
         {
-            if (!TryBuildOccupyReReserveSettings(out var triggerMode, out var leadTime, out var scheduledTime, out var errorMessage))
+            if (_isSigningOut || generation != _accountGeneration) return;
+            try
             {
-                await notificationService.ShowWarningAsync("占座设置无效", errorMessage);
-                return;
+                var plan = new OccupySeatPlan(
+                    BuildOccupyReReserveLeadTime(),
+                    (RefreshMode)SelectedRefreshModeIndex);
+                await RecordAndStartAsync("OccupySeat", "Desktop", () => occupySeatCoordinator.StartAsync(plan));
+            }
+            catch (Exception ex)
+            {
+                activityLogService.Write(LogEntryKind.Error, "Occupy", $"启动占座失败：{ex.Message}");
+                await notificationService.ShowWarningAsync("启动占座失败", ex.Message);
             }
 
-            var plan = new OccupySeatPlan(
-                leadTime,
-                (RefreshMode)SelectedRefreshModeIndex,
-                triggerMode,
-                scheduledTime);
-            await RecordAndStartAsync("OccupySeat", "Desktop", () => occupySeatCoordinator.StartAsync(plan));
         }
-        catch (Exception ex)
+        finally
         {
-            activityLogService.Write(LogEntryKind.Error, "Occupy", $"启动占座失败：{ex.Message}");
-            await notificationService.ShowWarningAsync("启动占座失败", ex.Message);
+            _accountOperationGate.Release();
         }
     }
 
@@ -2415,15 +2557,19 @@ public partial class MainWindowViewModel(
             return;
         }
 
+        var request = ++_venueRequestGeneration;
+        var generation = _accountGeneration;
         try
         {
             var layout = await apiClient.GetLibraryLayoutAsync(session.Cookie, library.LibraryId);
+            if (generation != _accountGeneration || request != _venueRequestGeneration || SelectedLibrary?.LibraryId != library.LibraryId) return;
             VenueStatusText = layout.IsOpen ? "开放中" : "未开放";
             IsVenueOpen = layout.IsOpen;
             VenueName = layout.Name;
             VenueFloor = layout.Floor;
             VenueAvailableSeatsText = layout.AvailableSeats.ToString();
             await LoadVenueRulePresentationAsync(library.LibraryId, persistLockedSnapshot: false);
+            if (generation != _accountGeneration || request != _venueRequestGeneration || SelectedLibrary?.LibraryId != library.LibraryId) return;
             IsCurrentLocked = _lockedLibrarySummary?.LibraryId == library.LibraryId;
             HasActiveVenuePreview = !IsCurrentLocked;
             IsVenuePickerOpen = false;
@@ -2507,6 +2653,8 @@ public partial class MainWindowViewModel(
 
     private async Task LoadVenueRulePresentationAsync(int libraryId, bool persistLockedSnapshot)
     {
+        var generation = _accountGeneration;
+        var request = _venueRequestGeneration;
         var session = sessionService.CurrentSession;
         if (session is null)
         {
@@ -2523,6 +2671,7 @@ public partial class MainWindowViewModel(
         try
         {
             var rule = await apiClient.GetLibraryRuleAsync(session.Cookie, libraryId);
+            if (generation != _accountGeneration || request != _venueRequestGeneration || SelectedLibrary?.LibraryId != libraryId) return;
             VenueOpenTimeText = string.IsNullOrWhiteSpace(rule.OpenTimeText) ? "--" : rule.OpenTimeText;
             VenueCloseTimeText = string.IsNullOrWhiteSpace(rule.CloseTimeText) ? "--" : rule.CloseTimeText;
         }
@@ -2587,6 +2736,8 @@ public partial class MainWindowViewModel(
 
     private async Task PopulateSeatsAsync(LibraryLayout layout, bool preserveSelection)
     {
+        _seatLibraryId = layout.LibraryId;
+        OnPropertyChanged(nameof(CanStartRandomAvailableSeatGrab));
         CancelFiltering();
         var selectedKeysToRestore = preserveSelection
             ? IsGrabSeatSelectionOverlayOpen
@@ -2964,48 +3115,12 @@ public partial class MainWindowViewModel(
         return TimeOnly.TryParse(ScheduledTimeText, out var value) ? value : null;
     }
 
-    private bool TryBuildOccupyReReserveSettings(
-        out OccupyReReserveTriggerMode triggerMode,
-        out TimeSpan leadTime,
-        out TimeOnly? scheduledTime,
-        out string errorMessage)
-    {
-        triggerMode = SelectedOccupyReReserveTriggerModeIndex == 1
-            ? OccupyReReserveTriggerMode.ScheduledTime
-            : OccupyReReserveTriggerMode.BeforeExpiration;
-        leadTime = BuildOccupyReReserveLeadTime();
-        scheduledTime = null;
-        errorMessage = string.Empty;
-
-        if (triggerMode == OccupyReReserveTriggerMode.BeforeExpiration)
-        {
-            return true;
-        }
-
-        if (!TimeOnly.TryParse(OccupyScheduledReReserveTimeText, out var parsed))
-        {
-            errorMessage = "指定重约时间格式应为 HH:mm:ss，例如 14:30:00。";
-            return false;
-        }
-
-        scheduledTime = parsed;
-        return true;
-    }
-
     private TimeSpan BuildOccupyReReserveLeadTime()
     {
         var minutes = Math.Clamp(ReReserveLeadMinutes, 0, 180);
         var seconds = Math.Clamp(ReReserveDelaySeconds, 0, 59);
         var leadTime = TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(seconds);
         return leadTime <= TimeSpan.Zero ? TimeSpan.FromSeconds(1) : leadTime;
-    }
-
-    private TimeOnly? GetOccupyScheduledReReserveTimeOrNull()
-    {
-        return SelectedOccupyReReserveTriggerModeIndex == 1 &&
-               TimeOnly.TryParse(OccupyScheduledReReserveTimeText, out var parsed)
-            ? parsed
-            : null;
     }
 
     private void OnLogEntryWritten(object? sender, AppLogEntry entry)
@@ -3553,9 +3668,11 @@ public partial class MainWindowViewModel(
 
     private async Task RefreshHomeUserStatisticsAsync(string cookie)
     {
+        var generation = _accountGeneration;
         try
         {
             var statistics = await apiClient.GetUserStatisticsAsync(cookie);
+            if (generation != _accountGeneration) return;
             HomeStudyTimeText = statistics.AllTime;
             HomeRankText = statistics.Rank;
             HomeDayLongestText = statistics.DayTime;
@@ -3650,9 +3767,11 @@ public partial class MainWindowViewModel(
 
     private async Task RefreshHomeUserDisplayNameAsync(string cookie)
     {
+        var generation = _accountGeneration;
         try
         {
             var nickname = await apiClient.GetCurrentUserNicknameAsync(cookie);
+            if (generation != _accountGeneration) return;
             if (string.IsNullOrWhiteSpace(nickname))
             {
                 return;
@@ -3903,8 +4022,7 @@ public partial class MainWindowViewModel(
         var remaining = ReservationTimeHelper.GetReReserveTriggerRemaining(
             _currentReservation.ExpirationTime,
             DateTimeOffset.Now,
-            BuildOccupyReReserveLeadTime(),
-            GetOccupyScheduledReReserveTimeOrNull());
+            BuildOccupyReReserveLeadTime());
         if (remaining <= TimeSpan.Zero)
         {
             ReservationCountdownText = "即将重约";

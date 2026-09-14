@@ -12,12 +12,16 @@ public sealed class LibraryService(
     IActivityLogService activityLogService,
     AppRuntimeState runtimeState) : ILibraryService
 {
+    private readonly SemaphoreSlim _bindingGate = new(1, 1);
+
     public LibrarySummary? BoundLibrary => runtimeState.BoundLibrary;
 
     public async Task<IReadOnlyList<LibrarySummary>> LoadLibrariesAsync(CancellationToken cancellationToken = default)
     {
+        var generation = runtimeState.SessionGeneration;
         var cookie = runtimeState.Session?.Cookie ?? throw new InvalidOperationException("当前未登录。");
         var libraries = await apiClient.GetLibrariesAsync(cookie, cancellationToken);
+        EnsureCurrentSession(generation);
         runtimeState.Libraries = libraries;
         activityLogService.Write(LogEntryKind.Success, "Library", $"已获取 {libraries.Count} 个可绑定场馆。");
         return libraries;
@@ -25,35 +29,48 @@ public sealed class LibraryService(
 
     public async Task<LibraryLayout> BindLibraryAsync(int libraryId, CancellationToken cancellationToken = default)
     {
-        var cookie = runtimeState.Session?.Cookie ?? throw new InvalidOperationException("当前未登录。");
-        var libraries = runtimeState.Libraries.Count > 0
-            ? runtimeState.Libraries
-            : await apiClient.GetLibrariesAsync(cookie, cancellationToken);
-
-        var target = libraries.FirstOrDefault(x => x.LibraryId == libraryId)
-            ?? throw new InvalidOperationException("未找到指定场馆。");
-        var layout = await apiClient.GetLibraryLayoutAsync(cookie, libraryId, cancellationToken);
-
-        runtimeState.Libraries = libraries;
-        runtimeState.BoundLibrary = target;
-        runtimeState.CurrentLayout = layout;
-
-        var settings = await settingsService.LoadAsync(cancellationToken);
-        await settingsService.SaveAsync(settings with
+        await _bindingGate.WaitAsync(cancellationToken);
+        try
         {
-            LastLibraryId = target.LibraryId,
-            LastLibraryName = target.Name
-        }, cancellationToken);
+            var generation = runtimeState.SessionGeneration;
+            var cookie = runtimeState.Session?.Cookie ?? throw new InvalidOperationException("当前未登录。");
+            var libraries = runtimeState.Libraries.Count > 0
+                ? runtimeState.Libraries
+                : await apiClient.GetLibrariesAsync(cookie, cancellationToken);
 
-        activityLogService.Write(LogEntryKind.Success, "Library", $"已绑定场馆：{target.Name}。");
-        return layout;
+            var target = libraries.FirstOrDefault(x => x.LibraryId == libraryId)
+                ?? throw new InvalidOperationException("未找到指定场馆。");
+            var layout = await apiClient.GetLibraryLayoutAsync(cookie, libraryId, cancellationToken);
+
+            EnsureCurrentSession(generation);
+            runtimeState.Libraries = libraries;
+            runtimeState.BoundLibrary = target;
+            runtimeState.CurrentLayout = layout;
+
+            var settings = await settingsService.LoadAsync(cancellationToken);
+            EnsureCurrentSession(generation);
+            await settingsService.SaveAsync(settings with
+            {
+                LastLibraryId = target.LibraryId,
+                LastLibraryName = target.Name
+            }, cancellationToken);
+
+            activityLogService.Write(LogEntryKind.Success, "Library", $"已绑定场馆：{target.Name}。");
+            return layout;
+        }
+        finally
+        {
+            _bindingGate.Release();
+        }
     }
 
     public async Task<LibraryLayout> RefreshBoundLibraryAsync(CancellationToken cancellationToken = default)
     {
+        var generation = runtimeState.SessionGeneration;
         var cookie = runtimeState.Session?.Cookie ?? throw new InvalidOperationException("当前未登录。");
         var library = runtimeState.BoundLibrary ?? throw new InvalidOperationException("当前未绑定场馆。");
         var layout = await apiClient.GetLibraryLayoutAsync(cookie, library.LibraryId, cancellationToken);
+        EnsureCurrentSession(generation);
         runtimeState.CurrentLayout = layout;
         return layout;
     }
@@ -73,5 +90,11 @@ public sealed class LibraryService(
     {
         await favoritesRepository.SaveFavoritesAsync(libraryId, seats, cancellationToken);
         activityLogService.Write(LogEntryKind.Success, "Favorite", $"已保存 {seats.Count} 个收藏座位。");
+    }
+
+    private void EnsureCurrentSession(long generation)
+    {
+        if (generation != runtimeState.SessionGeneration || runtimeState.Session is null)
+            throw new OperationCanceledException("登录状态已改变，已忽略旧场馆请求。");
     }
 }
