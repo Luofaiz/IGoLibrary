@@ -8,6 +8,46 @@ namespace IGoLibrary.Tests;
 
 public sealed class TomorrowReservationCoordinatorTests
 {
+    [Theory]
+    [InlineData("该座位已经被抢,请换个座位。")]
+    [InlineData("该座位已被抢，请换个座位。")]
+    [InlineData("该座位已经被预约,请换个座位。")]
+    public async Task StartAsync_ContinuesToNextPrioritySeat_WhenSeatWasTaken(string message)
+    {
+        var submitted = new List<string>();
+        var nextSeat = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var api = new FakeTraceIntApiClient
+        {
+            OnSavePrereserveSeatAsync = async (cookie, _, key, token) =>
+            {
+                submitted.Add(key);
+                if (key == "first") throw new TraceIntApiException(message, 1, message);
+                nextSeat.TrySetResult();
+                await Task.Delay(Timeout.Infinite, token);
+                return new PrereserveSaveResult(true, cookie);
+            }
+        };
+        var queue = new FakePrereserveQueueClient
+        {
+            OnRunAsync = async (callback, token) =>
+            {
+                await callback(new("prereserve/queue", "排队成功", 0, 0, ""), token);
+                await Task.Delay(Timeout.Infinite, token);
+            }
+        };
+        var coordinator = new TomorrowReservationCoordinator(api, queue, new FakeTaskAlertService(), new ActivityLogService(),
+            new AppRuntimeState { Session = new("cookie", SessionSource.ManualCookie, DateTimeOffset.Now, true) });
+        await coordinator.StartAsync(new(1, "场馆", [new("first", "A408"), new("second", "A612")], GrabMode.Aggressive,
+            new(TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(10), 0, TimeSpan.Zero, TimeSpan.Zero), null));
+        try
+        {
+            await nextSeat.Task.WaitAsync(TimeSpan.FromSeconds(3));
+            Assert.Equal(new[] { "first", "second" }, submitted);
+            Assert.Equal(CoordinatorTaskState.Running, coordinator.GetStatus().State);
+        }
+        finally { await coordinator.StopAsync(); }
+    }
+
     [Fact]
     public async Task StartAsync_BeginsSeatSubmission_WhenQueueReadyMessageArrives()
     {

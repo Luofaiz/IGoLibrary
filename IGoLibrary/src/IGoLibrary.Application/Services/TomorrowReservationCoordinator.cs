@@ -883,7 +883,7 @@ public sealed class TomorrowReservationCoordinator(
         }
 
         if (ContainsAny(message, "座位", "座席", "座号", "seat") &&
-            ContainsAny(message, "已被", "被预约", "已预约", "占用", "不可预约", "不存在", "无效", "not available", "occupied"))
+            ContainsAny(message, "已被", "被抢", "被预约", "已预约", "占用", "不可预约", "不存在", "无效", "not available", "occupied"))
         {
             miss = BuildTomorrowSeatMiss(TomorrowSeatMissKind.Unavailable, traceIntApiException);
             return true;
