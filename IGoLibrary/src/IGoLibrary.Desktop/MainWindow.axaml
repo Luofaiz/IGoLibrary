@@ -504,7 +504,7 @@
                       Padding="22,20">
                 <Grid>
                   <Grid IsVisible="{Binding HasReservationRecords}"
-                        RowDefinitions="Auto,Auto,*"
+                        RowDefinitions="Auto,*"
                         RowSpacing="18">
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
                       <TextBlock Classes="dashboard-eyebrow"
@@ -518,9 +518,7 @@
                               HorizontalContentAlignment="Center"
                               MinWidth="128" />
                     </Grid>
-                    <TextBlock Grid.Row="1" Text="{Binding ReservationRefreshStatusText}" Classes="helper-text" TextWrapping="Wrap" />
-
-                    <ScrollViewer Grid.Row="2"
+                    <ScrollViewer Grid.Row="1"
                                   VerticalScrollBarVisibility="Auto">
                         <ItemsControl ItemsSource="{Binding HomeReservationRecords}">
                         <ItemsControl.ItemTemplate>
@@ -619,7 +617,6 @@
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center" />
                     </Border>
-                    <TextBlock Text="{Binding ReservationRefreshStatusText}" Classes="helper-text" TextWrapping="Wrap" />
                     <TextBlock Text="当前暂无可显示的预约记录"
                                FontSize="20"
                                FontWeight="Bold"
