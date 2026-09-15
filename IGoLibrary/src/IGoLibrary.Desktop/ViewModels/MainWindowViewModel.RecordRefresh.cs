@@ -21,7 +21,7 @@ public partial class MainWindowViewModel
             ? result.TodayError is not null : result.TomorrowError is not null);
         UpdateReservationPresentation(retained.Concat(result.Records).ToArray());
         static string Describe(string name, DateTimeOffset? updated, Exception? error) =>
-            $"{name}：{(error is null ? "已刷新" : updated is null ? "刷新失败，状态未知" : "刷新失败，保留旧记录")} · {(updated is null ? "尚无成功记录" : updated.Value.ToString("MM-dd HH:mm:ss"))}";
+            $"{name}：{(error is null ? "已刷新" : updated is null ? "刷新失败，状态未知" : "刷新失败，保留旧记录")}";
         ReservationRefreshStatusText = Describe("今日", _todayRecordsUpdatedAt, result.TodayError) + "\n" +
             Describe("明日", _tomorrowRecordsUpdatedAt, result.TomorrowError);
     }
