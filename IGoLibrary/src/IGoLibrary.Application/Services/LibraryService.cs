@@ -97,4 +97,15 @@ public sealed class LibraryService(
         if (generation != runtimeState.SessionGeneration || runtimeState.Session is null)
             throw new OperationCanceledException("登录状态已改变，已忽略旧场馆请求。");
     }
+
+    public async Task<IReadOnlyList<TrackedSeat>> SyncFavoritesAsync(int libraryId, CancellationToken cancellationToken = default)
+    {
+        var generation = runtimeState.SessionGeneration;
+        var remote = await GetCommonSeatsAsync(cancellationToken);
+        EnsureCurrentSession(generation);
+        await favoritesRepository.ImportFavoritesAsync(libraryId,
+            remote.Where(x => x.LibraryId == libraryId && !string.IsNullOrWhiteSpace(x.SeatKey))
+                .Select(x => new TrackedSeat(x.SeatKey, x.SeatName)).ToArray(), cancellationToken);
+        return await GetFavoritesAsync(libraryId, cancellationToken);
+    }
 }

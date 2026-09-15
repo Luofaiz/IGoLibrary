@@ -37,6 +37,7 @@ public partial class MainWindowViewModel(
     IAppUpdateService appUpdateService,
     ITaskLaunchHistoryService? taskLaunchHistoryService = null) : ViewModelBase
 {
+    private readonly SemaphoreSlim _favoriteOperationGate = new(1, 1);
     private readonly ITaskLaunchHistoryService? _taskLaunchHistoryService = taskLaunchHistoryService;
     private readonly IAppThemeService _appThemeService = appThemeService;
     private readonly ObservableCollection<SeatItemViewModel> _allSeats = [];
@@ -67,6 +68,8 @@ public partial class MainWindowViewModel(
     private const int NotificationSettingsTabIndex = 5;
     private const int SystemSettingsTabIndex = 6;
     public const int GuideTabIndex = 7;
+    public const int HistoryTabIndex = 8;
+    private static readonly SidebarNavigationItem HistorySidebarItem = new(HistoryTabIndex, "任务历史", "M4 3h16v18H4z M7 7h10 M7 11h10 M7 15h7");
     private static readonly SidebarNavigationItem HomeSidebarItem = new(
         0,
         "首页",
@@ -104,7 +107,8 @@ public partial class MainWindowViewModel(
         HomeSidebarItem,
         AccountAndVenueSidebarItem,
         SettingsSidebarItem,
-        GuideSidebarItem
+        GuideSidebarItem,
+        HistorySidebarItem
     ];
     private static readonly SidebarNavigationItem[] AuthorizedSidebarItems =
     [
@@ -115,7 +119,8 @@ public partial class MainWindowViewModel(
         DailyCheckoutSidebarItem,
         NotificationSettingsSidebarItem,
         SettingsSidebarItem,
-        GuideSidebarItem
+        GuideSidebarItem,
+        HistorySidebarItem
     ];
     private IBrush GrabStateIdleBrush = appThemeService.CurrentPalette.IdleBrush;
     private IBrush GrabStateRunningBrush = appThemeService.CurrentPalette.RunningBrush;
@@ -163,7 +168,8 @@ public partial class MainWindowViewModel(
         HomeSidebarItem,
         AccountAndVenueSidebarItem,
         SettingsSidebarItem,
-        GuideSidebarItem
+        GuideSidebarItem,
+        HistorySidebarItem
     ];
 
     public ObservableCollection<SeatItemViewModel> VisibleSeats { get; } = [];
@@ -198,7 +204,8 @@ public partial class MainWindowViewModel(
 
     partial void OnSelectedTabIndexChanged(int value)
     {
-        if (!IsAuthorized && value > AccountAndVenueTabIndex && value is not (SystemSettingsTabIndex or GuideTabIndex))
+        if (value == HistoryTabIndex) _ = RefreshTaskHistoryAsync();
+        if (!IsAuthorized && value > AccountAndVenueTabIndex && value is not (SystemSettingsTabIndex or GuideTabIndex or HistoryTabIndex))
         {
             SelectedTabIndex = AccountAndVenueTabIndex;
             return;
@@ -808,7 +815,7 @@ public partial class MainWindowViewModel(
 
     partial void OnIsAuthorizedChanged(bool value)
     {
-        if (!value && SelectedTabIndex > AccountAndVenueTabIndex && SelectedTabIndex is not (SystemSettingsTabIndex or GuideTabIndex))
+        if (!value && SelectedTabIndex > AccountAndVenueTabIndex && SelectedTabIndex is not (SystemSettingsTabIndex or GuideTabIndex or HistoryTabIndex))
         {
             SelectedTabIndex = AccountAndVenueTabIndex;
         }
@@ -895,6 +902,11 @@ public partial class MainWindowViewModel(
 
         try
         {
+            if (_taskLaunchHistoryService is not null)
+            {
+                await _taskLaunchHistoryService.MarkInterruptedAsync();
+                await RefreshTaskHistoryAsync();
+            }
             await LoadSettingsAsync();
             await LoadProtocolTemplatesAsync();
 
@@ -1376,6 +1388,8 @@ public partial class MainWindowViewModel(
             UpdateHomeSystemInfoPresentation();
             HomeStudyTimeText = HomeRankText = HomeDayLongestText = HomeCreditText = "--";
             UpdateReservationPresentation([]);
+            ResetReservationRefreshState();
+            FavoriteSyncStatusText = "尚未同步";
             ApplyGrabStatus(grabSeatCoordinator.GetStatus());
             ApplyOccupyStatus(occupySeatCoordinator.GetStatus());
 
@@ -1668,6 +1682,7 @@ public partial class MainWindowViewModel(
             return;
         }
 
+        await _favoriteOperationGate.WaitAsync();
         try
         {
             var library = GetBoundVenueOrThrow();
@@ -1687,6 +1702,7 @@ public partial class MainWindowViewModel(
             activityLogService.Write(LogEntryKind.Error, "Favorite", $"保存收藏失败：{ex.Message}");
             await notificationService.ShowWarningAsync("保存收藏失败", ex.Message);
         }
+        finally { _favoriteOperationGate.Release(); }
     }
 
     [RelayCommand]
@@ -1697,6 +1713,7 @@ public partial class MainWindowViewModel(
             return;
         }
 
+        await _favoriteOperationGate.WaitAsync();
         try
         {
             var library = GetBoundVenueOrThrow();
@@ -1718,6 +1735,7 @@ public partial class MainWindowViewModel(
             activityLogService.Write(LogEntryKind.Error, "Favorite", $"取消收藏失败：{ex.Message}");
             await notificationService.ShowWarningAsync("取消收藏失败", ex.Message);
         }
+        finally { _favoriteOperationGate.Release(); }
     }
 
     [RelayCommand]
@@ -1728,6 +1746,7 @@ public partial class MainWindowViewModel(
             return;
         }
 
+        await _favoriteOperationGate.WaitAsync();
         try
         {
             var library = GetBoundVenueOrThrow();
@@ -1735,13 +1754,26 @@ public partial class MainWindowViewModel(
             var localFavorites = await libraryService.GetFavoritesAsync(library.LibraryId);
             if (generation != _accountGeneration || _seatLibraryId != library.LibraryId) return;
             ApplyFavoriteStates(localFavorites.Select(x => x.SeatKey), syncSelection: false);
-            await notificationService.ShowInfoAsync("收藏已加载", $"已加载 {localFavorites.Count} 个收藏座位。");
+            try
+            {
+                var merged = await libraryService.SyncFavoritesAsync(library.LibraryId);
+                if (generation != _accountGeneration || _seatLibraryId != library.LibraryId) return;
+                ApplyFavoriteStates(merged.Select(x => x.SeatKey), syncSelection: false);
+                FavoriteSyncStatusText = $"收藏已同步 · {DateTimeOffset.Now:HH:mm:ss} · {merged.Count} 个";
+            }
+            catch (Exception ex)
+            {
+                if (generation != _accountGeneration || _seatLibraryId != library.LibraryId) return;
+                FavoriteSyncStatusText = $"公众号同步失败，保留本地 {localFavorites.Count} 个收藏";
+                activityLogService.Write(LogEntryKind.Warning, "Favorite", $"公众号收藏同步失败：{ex.Message}");
+            }
         }
         catch (Exception ex)
         {
             activityLogService.Write(LogEntryKind.Error, "Favorite", $"读取收藏失败：{ex.Message}");
             await notificationService.ShowWarningAsync("读取收藏失败", ex.Message);
         }
+        finally { _favoriteOperationGate.Release(); }
     }
 
     [RelayCommand]
@@ -1929,22 +1961,28 @@ public partial class MainWindowViewModel(
 
         if (IsRefreshingReservationRecords)
         {
+            _reservationRefreshPending = true;
             return;
         }
 
         IsRefreshingReservationRecords = true;
         try
         {
-            var recordsTask = apiClient.GetReservationRecordsAsync(session.Cookie);
+            var recordsTask = apiClient.RefreshReservationRecordsAsync(session.Cookie);
             var nicknameTask = RefreshHomeUserDisplayNameAsync(session.Cookie);
             var statisticsTask = RefreshHomeUserStatisticsAsync(session.Cookie);
             await Task.WhenAll(recordsTask, nicknameTask, statisticsTask);
-            var records = await recordsTask;
+            var result = await recordsTask;
             if (generation != _accountGeneration) return;
-            UpdateReservationPresentation(records);
+            ApplyReservationRefresh(result);
+            var error = result.TodayError ?? result.TomorrowError;
+            if (error is not null) throw error;
         }
         catch (Exception ex)
         {
+            if (generation != _accountGeneration) return;
+            if (ReservationRefreshStatusText == "尚未刷新")
+                ReservationRefreshStatusText = "刷新失败，预约状态未知，请重试";
             if (CookieExpiryDetector.IsKnownExpiredCookieException(ex, session.Cookie))
             {
                 IsAuthorized = false;
@@ -1967,6 +2005,12 @@ public partial class MainWindowViewModel(
         finally
         {
             IsRefreshingReservationRecords = false;
+            if (_reservationRefreshPending)
+            {
+                _reservationRefreshPending = false;
+                if (generation == _accountGeneration)
+                    await RefreshReservationAsync(showNotificationOnError: false);
+            }
         }
     }
 
@@ -3183,6 +3227,7 @@ public partial class MainWindowViewModel(
 
     private void OnGrabStatusChanged(object? sender, CoordinatorStatus status)
     {
+        SaveTaskHistoryStatus("GrabSeat", status);
         Dispatcher.UIThread.Post(() =>
         {
             ApplyGrabStatus(status);
@@ -3207,6 +3252,9 @@ public partial class MainWindowViewModel(
 
     private void OnTomorrowReservationStatusChanged(object? sender, CoordinatorStatus status)
     {
+        SaveTaskHistoryStatus("TomorrowReservation", status);
+        if (status.State == CoordinatorTaskState.Completed && status.Message == "已成功预约明日目标座位。")
+            _ = Dispatcher.UIThread.InvokeAsync(() => RefreshReservationAsync(showNotificationOnError: false));
         Dispatcher.UIThread.Post(() =>
         {
             ApplyGrabStatus(status);
@@ -3216,6 +3264,7 @@ public partial class MainWindowViewModel(
 
     private void OnOccupyStatusChanged(object? sender, CoordinatorStatus status)
     {
+        SaveTaskHistoryStatus("OccupySeat", status);
         Dispatcher.UIThread.Post(() => ApplyOccupyStatus(status));
     }
 

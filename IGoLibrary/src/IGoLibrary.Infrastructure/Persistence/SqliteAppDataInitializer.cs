@@ -35,6 +35,19 @@ public sealed class SqliteAppDataInitializer(SqliteConnectionFactory connectionF
                 Value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS FavoriteExclusions (
+                LibraryId INTEGER NOT NULL,
+                SeatKey TEXT NOT NULL,
+                PRIMARY KEY (LibraryId, SeatKey)
+            );
+
+            CREATE TABLE IF NOT EXISTS TaskExecutionHistory (
+                Id TEXT PRIMARY KEY,
+                StartedAtUtc TEXT NOT NULL,
+                IsFinished INTEGER NOT NULL,
+                Payload TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS TaskLaunchHistory (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
                 TaskType TEXT NOT NULL,

@@ -152,13 +152,13 @@ public sealed partial class MainWindowViewModelTests
     }
 
     [Fact]
-    public void SidebarItems_ExposeGuideLast_WhenUnauthorized()
+    public void SidebarItems_ExposeLocalHistory_WhenUnauthorized()
     {
         var viewModel = CreateViewModel();
 
         var titles = viewModel.SidebarItems.Select(item => item.Title).ToArray();
 
-        Assert.Equal(["首页", "账户与场馆", "系统设置", "使用指南"], titles);
+        Assert.Equal(["首页", "账户与场馆", "系统设置", "使用指南", "任务历史"], titles);
     }
 
     [Fact]
@@ -170,7 +170,7 @@ public sealed partial class MainWindowViewModelTests
 
         var titles = viewModel.SidebarItems.Select(item => item.Title).ToArray();
 
-        Assert.Equal(["首页", "账户与场馆", "抢座", "占座", "退座", "通知设置", "系统设置", "使用指南"], titles);
+        Assert.Equal(["首页", "账户与场馆", "抢座", "占座", "退座", "通知设置", "系统设置", "使用指南", "任务历史"], titles);
     }
 
     [Fact]

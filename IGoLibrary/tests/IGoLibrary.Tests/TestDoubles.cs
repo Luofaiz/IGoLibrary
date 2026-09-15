@@ -612,6 +612,15 @@ internal sealed class FakeLibraryService : ILibraryService
                 : Array.Empty<TrackedSeat>() as IReadOnlyList<TrackedSeat>);
     }
 
+    public async Task<IReadOnlyList<TrackedSeat>> SyncFavoritesAsync(int libraryId, CancellationToken cancellationToken = default)
+    {
+        var local = await GetFavoritesAsync(libraryId, cancellationToken);
+        var merged = local.Concat(CommonSeats.Where(x => x.LibraryId == libraryId).Select(x => new TrackedSeat(x.SeatKey, x.SeatName)))
+            .DistinctBy(x => x.SeatKey).ToArray();
+        FavoritesByLibraryId[libraryId] = merged;
+        return merged;
+    }
+
     public Task<IReadOnlyList<CommonSeat>> GetCommonSeatsAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(CommonSeats);
 

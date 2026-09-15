@@ -1,6 +1,10 @@
+using IGoLibrary.Domain.Models;
+
 namespace IGoLibrary.Application.Abstractions;
 
 public interface ITaskLaunchHistoryService
 {
-    Task RecordAsync(string taskType, string source, CancellationToken cancellationToken = default);
+    Task SaveAsync(TaskHistoryEntry entry, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<TaskHistoryEntry>> GetRecentAsync(CancellationToken cancellationToken = default);
+    Task MarkInterruptedAsync(CancellationToken cancellationToken = default);
 }

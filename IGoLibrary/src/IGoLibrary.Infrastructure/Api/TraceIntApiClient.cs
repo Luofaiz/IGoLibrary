@@ -431,6 +431,38 @@ public sealed class TraceIntApiClient(
             .ToArray();
     }
 
+    public async Task<ReservationRecordsRefresh> RefreshReservationRecordsAsync(string cookie, CancellationToken cancellationToken = default)
+    {
+        var records = new List<ReservationRecord>();
+        Exception? todayError = null;
+        Exception? tomorrowError = null;
+        try
+        {
+            var templates = await protocolTemplateStore.GetEffectiveTemplatesAsync(cancellationToken);
+            using var response = await SendGraphQlAsync(cookie, templates.QueryReservationInfoTemplate, cancellationToken);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            ThrowIfGraphQlError(document.RootElement);
+            var node = document.RootElement.GetProperty("data").GetProperty("userAuth").GetProperty("reserve").GetProperty("reserve");
+            if (node.ValueKind != JsonValueKind.Null)
+            {
+                if (!TryReadTodayReservationRecord(document.RootElement, out var record))
+                    throw new InvalidOperationException("今日预约返回格式不完整。");
+                records.Add(record);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            todayError = ex;
+        }
+
+        try { records.AddRange(await GetTomorrowReservationRecordsAsync(GetCurrentRequestCookie(cookie), cancellationToken)); }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            tomorrowError = ex;
+        }
+        return new(records, todayError, tomorrowError);
+    }
+
     public async Task<DateTimeOffset?> GetTraceIntServerTimeAsync(CancellationToken cancellationToken = default)
     {
         using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -641,11 +673,9 @@ public sealed class TraceIntApiClient(
         using var document = JsonDocument.Parse(raw);
 
         ThrowIfGraphQlError(document.RootElement);
-        if (!document.RootElement.TryGetProperty("data", out var data) ||
-            !data.TryGetProperty("userAuth", out var userAuth) ||
-            !userAuth.TryGetProperty("prereserve", out var prereserveNode) ||
-            !prereserveNode.TryGetProperty("prereserve", out var prereserve) ||
-            prereserve.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        var prereserve = document.RootElement.GetProperty("data").GetProperty("userAuth")
+            .GetProperty("prereserve").GetProperty("prereserve");
+        if (prereserve.ValueKind == JsonValueKind.Null)
         {
             return [];
         }
@@ -659,12 +689,14 @@ public sealed class TraceIntApiClient(
                 {
                     records.Add(record);
                 }
+                else throw new InvalidOperationException("明日预约返回格式不完整。");
             }
         }
         else if (TryReadTomorrowReservationRecord(prereserve, out var record))
         {
             records.Add(record);
         }
+        else throw new InvalidOperationException("明日预约返回格式不完整。");
 
         return records;
     }

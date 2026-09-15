@@ -17,4 +17,6 @@ public interface ILibraryService
     Task<IReadOnlyList<CommonSeat>> GetCommonSeatsAsync(CancellationToken cancellationToken = default);
 
     Task SaveFavoritesAsync(int libraryId, IReadOnlyList<TrackedSeat> seats, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<TrackedSeat>> SyncFavoritesAsync(int libraryId, CancellationToken cancellationToken = default);
 }
