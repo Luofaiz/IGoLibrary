@@ -37,6 +37,8 @@ public interface ITraceIntApiClient
 
     Task RefreshPrereservePageAsync(string cookie, CancellationToken cancellationToken = default);
 
+    Task WarmUpPrereserveLibraryAsync(string cookie, int libraryId, CancellationToken cancellationToken = default);
+
     Task<PrereserveSaveResult> SavePrereserveSeatAsync(string cookie, int libraryId, string seatKey, CancellationToken cancellationToken = default);
 
     Task<bool> CancelReservationAsync(string cookie, string reservationToken, CancellationToken cancellationToken = default);

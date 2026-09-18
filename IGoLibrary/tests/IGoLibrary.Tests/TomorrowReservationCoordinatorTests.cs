@@ -6,7 +6,7 @@ using IGoLibrary.Domain.Models;
 
 namespace IGoLibrary.Tests;
 
-public sealed class TomorrowReservationCoordinatorTests
+public sealed partial class TomorrowReservationCoordinatorTests
 {
     [Theory]
     [InlineData("该座位已经被抢,请换个座位。")]
@@ -56,7 +56,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var stopQueue = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnSavePrereserveSeatAsync = (cookie, libraryId, seatKey, _) =>
             {
                 saveCalls++;
@@ -116,7 +116,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var stopQueue = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnGetPrereserveLibraryLayoutAsync = (_, _, _) => Task.FromResult(new LibraryLayout(
                 117580,
                 "自科阅览区",
@@ -198,7 +198,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var stopQueue = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnGetPrereserveLibraryLayoutAsync = (_, _, _) => Task.FromResult(new LibraryLayout(
                 117580,
                 "自科阅览区",
@@ -274,7 +274,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var stopQueue = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnGetPrereserveLibraryLayoutAsync = (_, _, _) => Task.FromResult(new LibraryLayout(
                 117580,
                 "自科阅览区",
@@ -368,7 +368,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var secondSubmitSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnSavePrereserveSeatAsync = (cookie, libraryId, seatKey, _) =>
             {
                 saveCalls++;
@@ -415,7 +415,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var saveCalls = 0;
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnGetPrereserveLibraryLayoutAsync = (_, _, _) => Task.FromResult(new LibraryLayout(
                 117580,
                 "自科阅览区",
@@ -458,7 +458,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var saveCalls = 0;
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnSavePrereserveSeatAsync = (cookie, _, _, _) =>
             {
                 saveCalls++;
@@ -498,7 +498,7 @@ public sealed class TomorrowReservationCoordinatorTests
                 validateCalls++;
                 return Task.CompletedTask;
             },
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnSavePrereserveSeatAsync = (cookie, _, _, _) =>
             {
                 saveCalls++;
@@ -546,7 +546,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var scheduledStart = DateTimeOffset.Now.AddMilliseconds(1500);
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnSavePrereserveSeatAsync = (cookie, _, _, _) =>
             {
                 saveCalls++;
@@ -576,7 +576,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var apiClient = new FakeTraceIntApiClient
         {
             OnGetTraceIntServerTimeAsync = _ => Task.FromResult<DateTimeOffset?>(DateTimeOffset.Now),
-            OnRefreshPrereservePageAsync = (_, _) =>
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) =>
             {
                 calls.Add("refresh");
                 return Task.CompletedTask;
@@ -609,7 +609,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var activityLog = new ActivityLogService();
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnSavePrereserveSeatAsync = (cookie, _, seatKey, _) =>
             {
                 submittedSeatKeys.Add(seatKey);
@@ -651,7 +651,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var firstSubmitSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnSavePrereserveSeatAsync = (cookie, _, seatKey, _) =>
             {
                 submittedSeatKeys.Add(seatKey);
@@ -698,7 +698,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var tomorrowRecordCalls = 0;
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnSavePrereserveSeatAsync = (cookie, _, seatKey, _) =>
                 Task.FromResult(new PrereserveSaveResult(true, cookie)),
             OnGetTomorrowReservationRecordsAsync = (_, _) =>
@@ -740,7 +740,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var secondCycleSeen = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) =>
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) =>
             {
                 refreshCalls++;
                 return Task.CompletedTask;
@@ -773,7 +773,7 @@ public sealed class TomorrowReservationCoordinatorTests
         await secondCycleSeen.Task.WaitAsync(TimeSpan.FromSeconds(3));
         await coordinator.StopAsync();
 
-        Assert.Equal(0, refreshCalls);
+        Assert.Equal(1, refreshCalls);
         Assert.True(saveCalls >= 2);
     }
 
@@ -783,7 +783,7 @@ public sealed class TomorrowReservationCoordinatorTests
         var queueCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var apiClient = new FakeTraceIntApiClient
         {
-            OnRefreshPrereservePageAsync = (_, _) => Task.CompletedTask,
+            OnWarmUpPrereserveLibraryAsync = (_, _, _) => Task.CompletedTask,
             OnSavePrereserveSeatAsync = (_, _, _, _) => throw new InvalidOperationException("boom")
         };
         var queueClient = new FakePrereserveQueueClient

@@ -18,14 +18,14 @@ public sealed class TomorrowReservationCoordinator(
     private CancellationTokenSource? _cts;
     private Task? _runningTask;
     private CoordinatorStatus _status = CoordinatorStatus.Idle("明日预约");
-    private sealed record QueueSession(CancellationTokenSource Cancellation, Task Task);
+    private sealed record QueueSession(CancellationTokenSource Cancellation, Task Task, Task Ended);
     private sealed record TomorrowSeatMiss(TomorrowSeatMissKind Kind, int? ErrorCode, string RemoteMessage);
     private static readonly TimeSpan QueuePreheatLeadTime = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan SubmittedConfirmationMinimumWait = TimeSpan.FromMilliseconds(600);
     private static readonly TimeSpan SubmittedConfirmationMaximumWait = TimeSpan.FromMilliseconds(1000);
-    private static readonly TimeSpan BusyRetryJitterMinimum = TimeSpan.FromMilliseconds(80);
-    private static readonly TimeSpan BusyRetryJitterMaximum = TimeSpan.FromMilliseconds(180);
-    private static readonly TimeSpan PreSubmitWarmupMinimumLeadTime = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan VenueWarmupTimeout = TimeSpan.FromMilliseconds(800);
+    private static readonly TimeSpan QueueReconnectDelay = TimeSpan.FromMilliseconds(300);
+    private static readonly TimeSpan SessionValidationRetryDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan SubmissionWindowPollInterval = TimeSpan.FromMilliseconds(50);
 
     public event EventHandler<CoordinatorStatus>? StatusChanged;
@@ -109,6 +109,7 @@ public sealed class TomorrowReservationCoordinator(
             var requestCount = 0;
             DateTimeOffset? lastRequestAt = null;
             var random = new Random();
+            var backoff = new TomorrowSubmissionBackoff();
 
             void MarkRequestSent()
             {
@@ -130,17 +131,99 @@ public sealed class TomorrowReservationCoordinator(
             var cookie = GetCurrentCookieOrThrow();
             var reservationSucceeded = new TaskCompletionSource<TrackedSeat>(TaskCreationOptions.RunContinuationsAsynchronously);
             queueSession = await StartQueueSessionAsync(cookie, reservationSucceeded, scheduledStart, cancellationToken);
+            if (reservationSucceeded.Task.IsCompletedSuccessfully)
+            {
+                await CompleteSuccessfullyAsync(plan, reservationSucceeded.Task.Result, cancellationToken);
+                return;
+            }
             cookie = GetCurrentCookieOrThrow();
-            await WarmUpPrereservePageAsync(cookie, scheduledStart, MarkRequestSent, cancellationToken);
+            await WarmUpPrereserveLibraryAsync(cookie, plan.LibraryId, MarkRequestSent, cancellationToken);
             cookie = GetCurrentCookieOrThrow();
+
+            async Task RestoreQueueAsync()
+            {
+                if (reservationSucceeded.Task.IsCompletedSuccessfully)
+                {
+                    return;
+                }
+
+                if (queueSession.Ended.IsCompleted)
+                {
+                    try
+                    {
+                        await queueSession.Task;
+                    }
+                    catch (Exception ex) when (!IsSessionFailure(ex) && !cancellationToken.IsCancellationRequested)
+                    {
+                        activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约排队连接中断：{ex.Message}");
+                    }
+                }
+
+                while (!reservationSucceeded.Task.IsCompletedSuccessfully)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (await WaitForReservationConfirmationAsync(reservationSucceeded.Task, QueueReconnectDelay, cancellationToken))
+                    {
+                        return;
+                    }
+
+                    try
+                    {
+                        queueSession = await RestartQueueSessionAsync(queueSession, GetCurrentCookieOrThrow(), reservationSucceeded, cancellationToken);
+                        if (!reservationSucceeded.Task.IsCompletedSuccessfully)
+                        {
+                            await WarmUpPrereserveLibraryAsync(GetCurrentCookieOrThrow(), plan.LibraryId, MarkRequestSent, cancellationToken);
+                        }
+                        if (!queueSession.Ended.IsCompleted)
+                        {
+                            return;
+                        }
+                        // Observe terminal authentication failures before another connection attempt.
+                        await queueSession.Task;
+                    }
+                    catch (Exception ex) when (IsTransientQueueFailure(ex) && !cancellationToken.IsCancellationRequested)
+                    {
+                        activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约重新连接失败，稍后重试：{ex.Message}");
+                    }
+                }
+            }
+
+            async Task PrepareSubmissionAsync()
+            {
+                while (!reservationSucceeded.Task.IsCompletedSuccessfully)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (queueSession.Ended.IsCompleted)
+                    {
+                        await RestoreQueueAsync();
+                        continue;
+                    }
+
+                    var remaining = backoff.Remaining;
+                    if (remaining <= TimeSpan.Zero)
+                    {
+                        return;
+                    }
+
+                    using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    await Task.WhenAny(Task.Delay(remaining, waitCts.Token), queueSession.Ended, reservationSucceeded.Task);
+                    waitCts.Cancel();
+                }
+            }
 
             if (scheduledStart is not null)
             {
-                await WaitUntilSubmissionWindowAsync(scheduledStart.Value, cancellationToken);
+                await WaitUntilSubmissionWindowAsync(scheduledStart.Value, PrepareSubmissionAsync, reservationSucceeded.Task, cancellationToken);
             }
 
             while (!cancellationToken.IsCancellationRequested)
             {
+                await PrepareSubmissionAsync();
+                if (reservationSucceeded.Task.IsCompletedSuccessfully)
+                {
+                    await CompleteSuccessfullyAsync(plan, reservationSucceeded.Task.Result, cancellationToken);
+                    return;
+                }
                 cycle++;
                 UpdateRunningMetrics("明日预约请求循环运行中。", cycle, requestCount, lastRequestAt);
                 cookie = GetCurrentCookieOrThrow();
@@ -156,12 +239,13 @@ public sealed class TomorrowReservationCoordinator(
                     attemptedSeatKeys.Add(seat.SeatKey);
 
                     var outcome = await TrySubmitSeatAsync(
-                        cookie,
                         plan.LibraryId,
                         seat,
                         MarkRequestSent,
                         reservationSucceeded.Task,
                         random,
+                        backoff,
+                        PrepareSubmissionAsync,
                         cancellationToken);
                     cookie = GetCurrentCookieOrThrow();
                     if (outcome == TomorrowSeatSubmitOutcome.Submitted)
@@ -172,10 +256,6 @@ public sealed class TomorrowReservationCoordinator(
                     else if (outcome == TomorrowSeatSubmitOutcome.RetryLater)
                     {
                         selectedSeatRetryRequested = true;
-                        if (offset + 1 < plan.Seats.Count)
-                        {
-                            await DelayAfterBusyRetryAsync(seat, random, cancellationToken);
-                        }
                     }
                     else if (outcome == TomorrowSeatSubmitOutcome.QueueRequired)
                     {
@@ -194,8 +274,7 @@ public sealed class TomorrowReservationCoordinator(
 
                 if (queueRefreshRequested)
                 {
-                    cookie = GetCurrentCookieOrThrow();
-                    queueSession = await RestartQueueSessionAsync(queueSession, cookie, reservationSucceeded, cancellationToken);
+                    await RestoreQueueAsync();
                 }
                 else if (plan.UseRandomAvailableSeat || (!selectedSeatAccepted && !selectedSeatRetryRequested))
                 {
@@ -207,12 +286,13 @@ public sealed class TomorrowReservationCoordinator(
                         random,
                         MarkRequestSent,
                         reservationSucceeded.Task,
+                        backoff,
+                        PrepareSubmissionAsync,
                         cancellationToken);
 
                     if (fallbackOutcome == TomorrowSeatSubmitOutcome.QueueRequired)
                     {
-                        cookie = GetCurrentCookieOrThrow();
-                        queueSession = await RestartQueueSessionAsync(queueSession, cookie, reservationSucceeded, cancellationToken);
+                        await RestoreQueueAsync();
                     }
                 }
 
@@ -240,7 +320,12 @@ public sealed class TomorrowReservationCoordinator(
                 }
 
                 var delay = RandomBetween(plan.PollingStrategy.MinimumDelay, plan.PollingStrategy.MaximumDelay, random);
-                await Task.Delay(delay, cancellationToken);
+                using (var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    await Task.WhenAny(Task.Delay(delay, waitCts.Token), queueSession.Ended, reservationSucceeded.Task);
+                    waitCts.Cancel();
+                }
+                cancellationToken.ThrowIfCancellationRequested();
 
                 if (reservationSucceeded.Task.IsCompletedSuccessfully)
                 {
@@ -276,18 +361,27 @@ public sealed class TomorrowReservationCoordinator(
     }
 
     private async Task<TomorrowSeatSubmitOutcome> TrySubmitSeatAsync(
-        string cookie,
         int libraryId,
         TrackedSeat seat,
         Action markRequestSent,
         Task<TrackedSeat> reservationSucceeded,
         Random random,
+        TomorrowSubmissionBackoff backoff,
+        Func<Task> prepareSubmission,
         CancellationToken cancellationToken)
     {
+        await prepareSubmission();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (reservationSucceeded.IsCompletedSuccessfully)
+        {
+            return TomorrowSeatSubmitOutcome.Submitted;
+        }
+
         try
         {
             markRequestSent();
-            var result = await apiClient.SavePrereserveSeatAsync(cookie, libraryId, seat.SeatKey, cancellationToken);
+            var result = await apiClient.SavePrereserveSeatAsync(GetCurrentCookieOrThrow(), libraryId, seat.SeatKey, cancellationToken);
+            backoff.Reset();
 
             if (result.Submitted)
             {
@@ -311,6 +405,15 @@ public sealed class TomorrowReservationCoordinator(
         catch (Exception ex) when (TryGetExpectedPrereserveMiss(ex, out var miss))
         {
             activityLogService.Write(LogEntryKind.Info, "Grab", GetPrereserveMissMessage(miss, seat));
+            if (miss.Kind == TomorrowSeatMissKind.RetryRequested)
+            {
+                var cooldown = backoff.RecordBusy();
+                activityLogService.Write(LogEntryKind.Info, "Grab", $"明日预约账户连续提交冷却 {cooldown.TotalMilliseconds:0}ms，后续座位共用此间隔。");
+            }
+            else if (miss.Kind != TomorrowSeatMissKind.QueueRequired)
+            {
+                backoff.Reset();
+            }
             return miss.Kind switch
             {
                 TomorrowSeatMissKind.QueueRequired => TomorrowSeatSubmitOutcome.QueueRequired,
@@ -328,6 +431,8 @@ public sealed class TomorrowReservationCoordinator(
         Random random,
         Action markRequestSent,
         Task<TrackedSeat> reservationSucceeded,
+        TomorrowSubmissionBackoff backoff,
+        Func<Task> prepareSubmission,
         CancellationToken cancellationToken)
     {
         var fallbackSeats = await SelectRandomFallbackSeatsAsync(
@@ -346,8 +451,6 @@ public sealed class TomorrowReservationCoordinator(
             return TomorrowSeatSubmitOutcome.Unavailable;
         }
 
-        cookie = GetCurrentCookieOrThrow();
-
         var finalOutcome = TomorrowSeatSubmitOutcome.Unavailable;
         foreach (var fallbackSeat in fallbackSeats)
         {
@@ -358,12 +461,13 @@ public sealed class TomorrowReservationCoordinator(
             activityLogService.Write(LogEntryKind.Info, "Grab", message);
 
             var outcome = await TrySubmitSeatAsync(
-                cookie,
                 plan.LibraryId,
                 fallbackSeat,
                 markRequestSent,
                 reservationSucceeded,
                 random,
+                backoff,
+                prepareSubmission,
                 cancellationToken);
             if (reservationSucceeded.IsCompletedSuccessfully ||
                 outcome is TomorrowSeatSubmitOutcome.Submitted or TomorrowSeatSubmitOutcome.RetryLater or TomorrowSeatSubmitOutcome.QueueRequired)
@@ -377,7 +481,6 @@ public sealed class TomorrowReservationCoordinator(
             }
 
             finalOutcome = outcome;
-            cookie = GetCurrentCookieOrThrow();
         }
 
         return finalOutcome;
@@ -429,42 +532,37 @@ public sealed class TomorrowReservationCoordinator(
         return candidates;
     }
 
-    private async Task WarmUpPrereservePageAsync(
+    private async Task WarmUpPrereserveLibraryAsync(
         string cookie,
-        DateTimeOffset? scheduledStart,
+        int libraryId,
         Action markRequestSent,
         CancellationToken cancellationToken)
     {
-        if (scheduledStart is null)
-        {
-            return;
-        }
-
-        var remaining = scheduledStart.Value - DateTimeOffset.Now;
-        if (remaining <= TimeSpan.Zero)
-        {
-            activityLogService.Write(LogEntryKind.Info, "Grab", "明日预约已到正式提交窗口，跳过预热刷新，直接提交优先座位。");
-            return;
-        }
-
-        if (remaining < PreSubmitWarmupMinimumLeadTime)
-        {
-            activityLogService.Write(
-                LogEntryKind.Info,
-                "Grab",
-                $"距离明日预约正式窗口仅剩 {remaining.TotalMilliseconds:0}ms，跳过预热刷新，优先保证第一发提交。");
-            return;
-        }
-
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(VenueWarmupTimeout);
+        Task? warmup = null;
         try
         {
             markRequestSent();
-            await apiClient.RefreshPrereservePageAsync(cookie, cancellationToken);
-            activityLogService.Write(LogEntryKind.Info, "Grab", "明日预约正式窗口前预热完成，后续循环不再每轮刷新页面。");
+            warmup = apiClient.WarmUpPrereserveLibraryAsync(cookie, libraryId, timeoutCts.Token);
+            await warmup.WaitAsync(timeoutCts.Token);
+            activityLogService.Write(LogEntryKind.Info, "Grab", "明日预约排队后场馆预热完成，本次排队不再重复刷新。");
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约预热刷新失败，继续等待提交窗口：{ex.Message}");
+            activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约场馆预热达到 {VenueWarmupTimeout.TotalMilliseconds:0}ms 上限，继续提交。");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && !IsSessionFailure(ex))
+        {
+            activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约场馆预热失败，继续提交：{ex.Message}");
+        }
+        finally
+        {
+            timeoutCts.Cancel();
+            if (warmup is not null)
+            {
+                ObserveLateFault(warmup);
+            }
         }
     }
 
@@ -506,11 +604,10 @@ public sealed class TomorrowReservationCoordinator(
         }
     }
 
-    private async Task HandleQueueMessageAsync(
+    private void HandleQueueMessage(
         PrereserveQueueMessage message,
         TaskCompletionSource queueReady,
-        TaskCompletionSource<TrackedSeat> reservationSucceeded,
-        CancellationToken cancellationToken)
+        TaskCompletionSource<TrackedSeat> reservationSucceeded)
     {
         if (!string.IsNullOrWhiteSpace(message.Message) &&
             (!message.IndicatesQueueReady || !queueReady.Task.IsCompleted))
@@ -523,14 +620,7 @@ public sealed class TomorrowReservationCoordinator(
 
         if (message.IndicatesCookieInvalid)
         {
-            throw new InvalidOperationException("明日预约排队返回 Cookie 无效。");
-        }
-
-        if (message.RequestsSessionRefresh)
-        {
-            var cookie = GetCurrentCookieOrThrow();
-            await apiClient.ValidateCookieAsync(cookie, cancellationToken);
-            activityLogService.Write(LogEntryKind.Info, "Grab", "明日预约排队预热已连接，等待正式排队成功消息。");
+            throw new TraceIntApiException("明日预约排队返回 Cookie 无效。", 1000, isAuthorizationDenied: true);
         }
 
         if (message.IndicatesQueueReady)
@@ -541,6 +631,7 @@ public sealed class TomorrowReservationCoordinator(
         if (message.IndicatesSuccess)
         {
             reservationSucceeded.TrySetResult(ResolveSuccessSeat(message.Message));
+            queueReady.TrySetResult();
         }
     }
 
@@ -552,14 +643,9 @@ public sealed class TomorrowReservationCoordinator(
     {
         var queueReadyCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var queueReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var queueTask = queueClient.RunAsync(
-            cookie,
-            async (message, messageToken) =>
-            {
-                await HandleQueueMessageAsync(message, queueReady, reservationSucceeded, messageToken);
-            },
-            queueReadyCts.Token);
-        var session = new QueueSession(queueReadyCts, queueTask);
+        var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var queueTask = RunQueueSessionAsync(cookie, queueReady, reservationSucceeded, ended, queueReadyCts.Token);
+        var session = new QueueSession(queueReadyCts, queueTask, ended.Task);
 
         SetRunning(scheduledStart is null ? "明日预约排队中。" : "明日预约排队预热中。");
         activityLogService.Write(
@@ -578,6 +664,96 @@ public sealed class TomorrowReservationCoordinator(
             await StopQueueSessionAsync(session);
             throw;
         }
+    }
+
+    private async Task RunQueueSessionAsync(
+        string cookie,
+        TaskCompletionSource queueReady,
+        TaskCompletionSource<TrackedSeat> reservationSucceeded,
+        TaskCompletionSource ended,
+        CancellationToken cancellationToken)
+    {
+        using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var validationFailed = new TaskCompletionSource<Exception>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task<bool>? validation = null;
+        var validationStartedAt = 0L;
+        async Task RunTransportAsync() => await queueClient.RunAsync(cookie, (message, token) =>
+        {
+            HandleQueueMessage(message, queueReady, reservationSucceeded);
+            // Coalesce duplicate signals. Retry transient failures slowly, outside the receive loop.
+            if (message.RequestsSessionRefresh && !queueReady.Task.IsCompleted && !validationFailed.Task.IsCompleted &&
+                (validation is null || validation.IsCompletedSuccessfully && !validation.Result &&
+                    System.Diagnostics.Stopwatch.GetElapsedTime(validationStartedAt) >= SessionValidationRetryDelay))
+            {
+                validationStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+                validation = ValidateQueueSessionAsync(validationFailed, token);
+            }
+            return Task.CompletedTask;
+        }, sessionCts.Token);
+        var transport = RunTransportAsync();
+
+        try
+        {
+            await Task.WhenAny(transport, validationFailed.Task).WaitAsync(cancellationToken);
+            if (validationFailed.Task.IsCompletedSuccessfully)
+            {
+                throw validationFailed.Task.Result;
+            }
+            await transport;
+        }
+        finally
+        {
+            ended.TrySetResult();
+            sessionCts.Cancel();
+            var cleanup = Task.WhenAll(transport, (Task?)validation ?? Task.CompletedTask);
+            try
+            {
+                await cleanup.WaitAsync(TimeSpan.FromSeconds(1));
+            }
+            catch
+            {
+                // Preserve the primary transport/authentication failure above.
+                ObserveLateFault(cleanup);
+            }
+        }
+    }
+
+    private async Task<bool> ValidateQueueSessionAsync(TaskCompletionSource<Exception> failure, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await apiClient.ValidateCookieAsync(GetCurrentCookieOrThrow(), cancellationToken);
+            activityLogService.Write(LogEntryKind.Info, "Grab", "明日预约排队会话验证完成，同一连接不再重复验证。");
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (IsSessionFailure(ex))
+            {
+                failure.TrySetResult(ex);
+            }
+            else
+            {
+                activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约排队会话验证暂未完成，继续等待队列消息：{ex.Message}");
+            }
+        }
+        return false;
+    }
+
+    private bool IsSessionFailure(Exception exception) =>
+        CookieExpiryDetector.IsKnownExpiredCookieException(exception, runtimeState.Session?.Cookie);
+
+    private bool IsTransientQueueFailure(Exception exception) =>
+        !IsSessionFailure(exception) && (exception is System.Net.WebSockets.WebSocketException
+            or HttpRequestException or IOException or TimeoutException);
+
+    private static void ObserveLateFault(Task task)
+    {
+        _ = task.ContinueWith(completed => { _ = completed.Exception; }, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
     }
 
     private async Task<QueueSession> RestartQueueSessionAsync(
@@ -653,11 +829,11 @@ public sealed class TomorrowReservationCoordinator(
 
     private static async Task WaitForQueueHandshakeAsync(Task readyTask, Task queueTask, CancellationToken cancellationToken)
     {
-        var completed = await Task.WhenAny(readyTask, queueTask);
-        if (completed == queueTask)
+        var completed = await Task.WhenAny(readyTask, queueTask).WaitAsync(cancellationToken);
+        if (completed == queueTask && !readyTask.IsCompletedSuccessfully)
         {
             await queueTask;
-            throw new InvalidOperationException("明日预约排队连接已关闭。");
+            throw new IOException("明日预约排队连接已关闭。");
         }
 
         await readyTask.WaitAsync(cancellationToken);
@@ -697,10 +873,19 @@ public sealed class TomorrowReservationCoordinator(
         }
     }
 
-    private async Task WaitUntilSubmissionWindowAsync(DateTimeOffset scheduledStart, CancellationToken cancellationToken)
+    private async Task WaitUntilSubmissionWindowAsync(
+        DateTimeOffset scheduledStart,
+        Func<Task> prepareSubmission,
+        Task<TrackedSeat> reservationSucceeded,
+        CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            await prepareSubmission();
+            if (reservationSucceeded.IsCompletedSuccessfully)
+            {
+                return;
+            }
             var now = DateTimeOffset.Now;
             var remaining = scheduledStart - now;
             if (remaining <= TimeSpan.Zero)
@@ -754,16 +939,6 @@ public sealed class TomorrowReservationCoordinator(
         var completed = await Task.WhenAny(reservationSucceeded, Task.Delay(timeout, cancellationToken));
         cancellationToken.ThrowIfCancellationRequested();
         return completed == reservationSucceeded && reservationSucceeded.IsCompletedSuccessfully;
-    }
-
-    private async Task DelayAfterBusyRetryAsync(TrackedSeat seat, Random random, CancellationToken cancellationToken)
-    {
-        var delay = RandomBetween(BusyRetryJitterMinimum, BusyRetryJitterMaximum, random);
-        activityLogService.Write(
-            LogEntryKind.Info,
-            "Grab",
-            $"{seat.SeatName} 明日预约遇到服务端忙碌，等待 {delay.TotalMilliseconds:0}ms 后继续下一个优先座位。");
-        await Task.Delay(delay, cancellationToken);
     }
 
     internal static DateTimeOffset ResolveNextScheduledStart(TimeOnly scheduledStart, DateTimeOffset now)
@@ -849,7 +1024,7 @@ public sealed class TomorrowReservationCoordinator(
     private static bool TryGetExpectedPrereserveMiss(Exception exception, out TomorrowSeatMiss miss)
     {
         miss = new TomorrowSeatMiss(TomorrowSeatMissKind.None, null, string.Empty);
-        if (exception is not TraceIntApiException traceIntApiException)
+        if (exception is not TraceIntApiException traceIntApiException || traceIntApiException.IsAuthorizationDenied)
         {
             return false;
         }

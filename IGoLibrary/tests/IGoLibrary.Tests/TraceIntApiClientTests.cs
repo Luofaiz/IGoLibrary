@@ -348,7 +348,7 @@ public sealed class TraceIntApiClientTests
         Assert.NotNull(capturedRequest);
         Assert.Contains("MicroMessenger", capturedRequest.Headers.UserAgent.ToString());
         Assert.True(capturedRequest.Headers.TryGetValues("App-Version", out var appVersions));
-        Assert.Equal("2.0.14", Assert.Single(appVersions));
+        Assert.Equal(PrereserveQueueClient.TomorrowReservationAppVersion, Assert.Single(appVersions));
         Assert.Contains("prereserve", capturedPayload);
         Assert.Contains("libLayout(libId: $libId)", capturedPayload);
         Assert.Contains("\"libId\":117580", capturedPayload);
@@ -402,7 +402,7 @@ public sealed class TraceIntApiClientTests
         Assert.NotNull(capturedRequest);
         Assert.Contains("MicroMessenger", capturedRequest.Headers.UserAgent.ToString());
         Assert.True(capturedRequest.Headers.TryGetValues("App-Version", out var appVersions));
-        Assert.Equal("2.0.14", Assert.Single(appVersions));
+        Assert.Equal(PrereserveQueueClient.TomorrowReservationAppVersion, Assert.Single(appVersions));
         Assert.Contains("prereserve", capturedPayload);
         Assert.Contains("\"key\":\"10,79.\"", capturedPayload);
         Assert.Contains("\"libid\":371", capturedPayload);
@@ -443,7 +443,7 @@ public sealed class TraceIntApiClientTests
         Assert.NotNull(capturedRequest);
         Assert.Contains("MicroMessenger", capturedRequest.Headers.UserAgent.ToString());
         Assert.True(capturedRequest.Headers.TryGetValues("App-Version", out var appVersions));
-        Assert.Equal("2.0.14", Assert.Single(appVersions));
+        Assert.Equal(PrereserveQueueClient.TomorrowReservationAppVersion, Assert.Single(appVersions));
         Assert.Contains("mutation cancle", capturedPayload);
         Assert.Contains("\"operationName\":\"cancle\"", capturedPayload);
     }

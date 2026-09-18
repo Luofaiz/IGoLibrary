@@ -28,6 +28,8 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
     public Func<string, CancellationToken, Task<UserStatistics>>? OnGetUserStatisticsAsync { get; set; }
     public Func<string, int, string, CancellationToken, Task<bool>>? OnReserveSeatAsync { get; set; }
     public Func<string, CancellationToken, Task>? OnRefreshPrereservePageAsync { get; set; }
+
+    public Func<string, int, CancellationToken, Task>? OnWarmUpPrereserveLibraryAsync { get; set; }
     public Func<string, int, string, CancellationToken, Task<PrereserveSaveResult>>? OnSavePrereserveSeatAsync { get; set; }
     public Func<string, string, CancellationToken, Task<bool>>? OnCancelReservationAsync { get; set; }
     public Func<string, CancellationToken, Task<bool>>? OnCancelPrereserveAsync { get; set; }
@@ -103,6 +105,9 @@ internal sealed class FakeTraceIntApiClient : ITraceIntApiClient
 
     public Task RefreshPrereservePageAsync(string cookie, CancellationToken cancellationToken = default)
         => OnRefreshPrereservePageAsync?.Invoke(cookie, cancellationToken) ?? Task.CompletedTask;
+
+    public Task WarmUpPrereserveLibraryAsync(string cookie, int libraryId, CancellationToken cancellationToken = default)
+        => OnWarmUpPrereserveLibraryAsync?.Invoke(cookie, libraryId, cancellationToken) ?? Task.CompletedTask;
 
     public Task<PrereserveSaveResult> SavePrereserveSeatAsync(
         string cookie,

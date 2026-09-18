@@ -514,6 +514,20 @@ public sealed class TraceIntApiClient(
         return ReadBooleanLike(reserveResult, "reserueSeat");
     }
 
+    public async Task WarmUpPrereserveLibraryAsync(string cookie, int libraryId, CancellationToken cancellationToken = default)
+    {
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operationName = "libLayout",
+            query = "query libLayout($libId: Int!) { userAuth { prereserve { libLayout(libId: $libId) { seats_booking seats_total seats_used } } } }",
+            variables = new { libId = libraryId }
+        });
+        using var response = await SendGraphQlAsync(cookie, payload, cancellationToken, usePrereserveHeaders: true);
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var document = JsonDocument.Parse(raw);
+        ThrowIfGraphQlError(document.RootElement);
+    }
+
     public async Task RefreshPrereservePageAsync(string cookie, CancellationToken cancellationToken = default)
     {
         var prereservePayload = """{"operationName":"prereserve","query":"query prereserve {\n userAuth {\n prereserve {\n prereserve {\n day\n lib_id\n seat_key\n seat_name\n is_used\n user_mobile\n id\n lib_name\n }\n }\n }\n}"}""";
