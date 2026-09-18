@@ -926,11 +926,7 @@ public partial class MainWindowViewModel(
                         await RefreshHomeUserDisplayNameAsync(restored.Cookie);
                         await RefreshHomeUserStatisticsAsync(restored.Cookie);
                         await TriggerAutomaticCreditSignInAsync(restored.Cookie);
-                        await LoadLibrariesAsync(restorePreferredSelection: true);
-                        if (SelectedLibrary is not null)
-                        {
-                            await BindSelectedLibraryCoreAsync();
-                        }
+                        await RestoreGrabSelectionAfterAuthorizationAsync(restorePreferredSelection: true);
                     }
                 }
                 finally
@@ -1219,7 +1215,7 @@ public partial class MainWindowViewModel(
                     await RefreshHomeUserDisplayNameAsync(session.Cookie);
                     await RefreshHomeUserStatisticsAsync(session.Cookie);
                     await TriggerAutomaticCreditSignInAsync(session.Cookie);
-                    await LoadLibrariesAsync(restorePreferredSelection: false);
+                    await RestoreGrabSelectionAfterAuthorizationAsync();
                 }
                 catch (Exception ex)
                 {
@@ -1271,7 +1267,7 @@ public partial class MainWindowViewModel(
                 await RefreshHomeUserDisplayNameAsync(session.Cookie);
                 await RefreshHomeUserStatisticsAsync(session.Cookie);
                 await TriggerAutomaticCreditSignInAsync(session.Cookie);
-                await LoadLibrariesAsync(restorePreferredSelection: false);
+                await RestoreGrabSelectionAfterAuthorizationAsync();
                 SelectedTabIndex = 1;
             }
             catch (Exception ex)
@@ -1310,7 +1306,7 @@ public partial class MainWindowViewModel(
                 await RefreshHomeUserDisplayNameAsync(session.Cookie);
                 await RefreshHomeUserStatisticsAsync(session.Cookie);
                 await TriggerAutomaticCreditSignInAsync(session.Cookie);
-                await LoadLibrariesAsync(restorePreferredSelection: false);
+                await RestoreGrabSelectionAfterAuthorizationAsync();
             }
             catch (Exception ex)
             {
@@ -1338,6 +1334,7 @@ public partial class MainWindowViewModel(
             ++_venueRequestGeneration;
             await Task.WhenAll(grabSeatCoordinator.StopAsync(), tomorrowReservationCoordinator.StopAsync(), occupySeatCoordinator.StopAsync());
             await sessionService.SignOutAsync();
+            await SeatSelectionSaveTask;
             _seatLibraryId = null;
             await ClearStoredLibrarySelectionAsync();
             CancelFiltering();
@@ -1604,6 +1601,7 @@ public partial class MainWindowViewModel(
         }
 
         RefreshSelectedSeatsPresentation();
+        SaveGrabSeatSelection();
         if (!IsGrabSeatSelectionOverlayOpen)
         {
             ApplySelectionToSeatItems(_committedSelectedSeatKeys);
@@ -1613,13 +1611,13 @@ public partial class MainWindowViewModel(
     [RelayCommand]
     private void MoveSelectedSeatUp(TrackedSeat? seat)
     {
-        MoveSelectedSeat(_committedSelectedSeatKeys, seat, -1, RefreshSelectedSeatsPresentation);
+        MoveSelectedSeat(_committedSelectedSeatKeys, seat, -1, () => { RefreshSelectedSeatsPresentation(); SaveGrabSeatSelection(); });
     }
 
     [RelayCommand]
     private void MoveSelectedSeatDown(TrackedSeat? seat)
     {
-        MoveSelectedSeat(_committedSelectedSeatKeys, seat, 1, RefreshSelectedSeatsPresentation);
+        MoveSelectedSeat(_committedSelectedSeatKeys, seat, 1, () => { RefreshSelectedSeatsPresentation(); SaveGrabSeatSelection(); });
     }
 
     [RelayCommand]
@@ -1787,6 +1785,7 @@ public partial class MainWindowViewModel(
         _committedSelectedSeatKeys.Clear();
         _draftSelectedSeatKeys.Clear();
         RefreshSelectedSeatsPresentation();
+        SaveGrabSeatSelection();
         UpdateDraftSelectionPresentation();
         ApplySelectionToSeatItems(Array.Empty<string>());
     }
@@ -2933,6 +2932,7 @@ public partial class MainWindowViewModel(
 
             UpdateSelectionKey(_committedSelectedSeatKeys, seatItem);
             RefreshSelectedSeatsPresentation();
+            SaveGrabSeatSelection();
             return;
         }
 
@@ -2963,6 +2963,7 @@ public partial class MainWindowViewModel(
         _committedSelectedSeatKeys.Clear();
         _committedSelectedSeatKeys.AddRange(_draftSelectedSeatKeys);
         RefreshSelectedSeatsPresentation();
+        SaveGrabSeatSelection();
         _draftSelectedSeatKeys.Clear();
         UpdateDraftSelectionPresentation();
     }

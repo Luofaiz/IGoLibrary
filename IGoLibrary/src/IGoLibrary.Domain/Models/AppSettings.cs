@@ -19,7 +19,8 @@ public sealed record AppSettings(
     string? CachedUserNickname = null,
     bool DailyCheckoutEnabled = false,
     string DailyCheckoutTime = "21:30",
-    bool AutoCreditSignInEnabled = true)
+    bool AutoCreditSignInEnabled = true,
+    GrabSeatSelection? LastGrabSeatSelection = null)
 {
     public static AppSettings Default { get; } = new(
         NotificationsEnabled: true,
