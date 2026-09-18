@@ -36,6 +36,8 @@ public sealed partial class MainWindowViewModelTests
             await vm.ValidateManualCookieCommand.ExecuteAsync(null);
         }
         Assert.Equal(library.LibraryId, vm.SelectedLibrary?.LibraryId);
+        Assert.Equal(library.LibraryId, libraries.BoundLibrary?.LibraryId);
+        Assert.True(vm.IsCurrentLocked);
         Assert.Equal(["third", "first"], vm.SelectedSeats.Select(x => x.SeatKey));
         Assert.Null(grab.StartedPlan);
         Assert.Null(tomorrow.StartedPlan);
@@ -101,6 +103,49 @@ public sealed partial class MainWindowViewModelTests
         var legacy = JsonSerializer.SerializeToNode(AppSettings.Default)!.AsObject();
         legacy.Remove(nameof(AppSettings.LastGrabSeatSelection));
         Assert.Null(legacy.Deserialize<AppSettings>()!.LastGrabSeatSelection);
+    }
+
+    [Fact]
+    public async Task SwitchingAndLockingVenue_ReplacesRememberedVenue_EvenBeforeSelectingSeats()
+    {
+        var (first, libraries) = SelectionLibraries();
+        var second = first with { LibraryId = 20, Name = "新场馆" };
+        libraries.LibrariesToLoad = [first, second];
+        libraries.LayoutsByLibraryId[20] = libraries.LayoutsByLibraryId[10] with { LibraryId = 20, Name = "新场馆" };
+        var settings = new FakeSettingsService(AppSettings.Default with { LastGrabSeatSelection = new(10, ["third", "first"]) });
+        var vm = CreateViewModel(libraryService: libraries, settingsService: settings);
+        vm.ManualCookieText = "cookie";
+        await vm.ValidateManualCookieCommand.ExecuteAsync(null);
+        vm.SelectedLibrary = second;
+        // Preview alone must not replace the previously locked venue.
+        await vm.SaveSettingsCommand.ExecuteAsync(null);
+        Assert.Equal(10, settings.CurrentSettings.LastLibraryId);
+        Assert.Equal(10, settings.CurrentSettings.LastGrabSeatSelection!.LibraryId);
+        await vm.BindSelectedLibraryCommand.ExecuteAsync(null);
+        Assert.Equal(20, settings.CurrentSettings.LastGrabSeatSelection!.LibraryId);
+        Assert.Empty(settings.CurrentSettings.LastGrabSeatSelection.SeatKeys);
+        await vm.SignOutCommand.ExecuteAsync(null);
+        vm.ManualCookieText = "cookie";
+        await vm.ValidateManualCookieCommand.ExecuteAsync(null);
+        Assert.Equal(20, libraries.BoundLibrary?.LibraryId);
+        Assert.True(vm.IsCurrentLocked);
+        Assert.Empty(vm.SelectedSeats);
+
+        vm.VisibleSeats.Single(x => x.SeatKey == "second").IsSelected = true;
+        vm.VisibleSeats.Single(x => x.SeatKey == "first").IsSelected = true;
+        await vm.SeatSelectionSaveTask;
+        // Multiple automatic restorations must neither freeze nor overwrite the saved order.
+        await vm.ValidateManualCookieCommand.ExecuteAsync(null);
+        await vm.ValidateManualCookieCommand.ExecuteAsync(null);
+        Assert.Equal(["second", "first"], vm.SelectedSeats.Select(x => x.SeatKey));
+        vm.MoveSelectedSeatUpCommand.Execute(vm.SelectedSeats[1]);
+        await vm.SeatSelectionSaveTask;
+        var fresh = CreateViewModel(libraryService: libraries, settingsService: settings);
+        fresh.ManualCookieText = "cookie";
+        await fresh.ValidateManualCookieCommand.ExecuteAsync(null);
+        Assert.Equal(20, libraries.BoundLibrary?.LibraryId);
+        Assert.True(fresh.IsCurrentLocked);
+        Assert.Equal(["first", "second"], fresh.SelectedSeats.Select(x => x.SeatKey));
     }
 
     private static (LibrarySummary Library, FakeLibraryService Service) SelectionLibraries()

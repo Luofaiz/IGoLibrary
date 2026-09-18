@@ -1460,7 +1460,7 @@ public partial class MainWindowViewModel(
         }
     }
 
-    private async Task BindSelectedLibraryCoreAsync()
+    private async Task BindSelectedLibraryCoreAsync(bool rememberSelection = true)
     {
         try
         {
@@ -1474,6 +1474,7 @@ public partial class MainWindowViewModel(
             var library = SelectedLibrary;
             var generation = _accountGeneration;
             var request = ++_venueRequestGeneration;
+            await SeatSelectionSaveTask;
             var layout = await libraryService.BindLibraryAsync(library.LibraryId);
             if (generation != _accountGeneration || request != _venueRequestGeneration || SelectedLibrary?.LibraryId != library.LibraryId) return;
             var preserveSelection = _lockedLibrarySummary?.LibraryId == library.LibraryId;
@@ -1481,6 +1482,11 @@ public partial class MainWindowViewModel(
             await LoadVenueRulePresentationAsync(library.LibraryId, persistLockedSnapshot: true);
             if (generation != _accountGeneration || SelectedLibrary?.LibraryId != library.LibraryId) return;
             await PopulateSeatsAsync(layout, preserveSelection);
+            if (rememberSelection)
+            {
+                SaveGrabSeatSelection();
+                await SeatSelectionSaveTask;
+            }
             await LoadFavoritesAsync();
             await RefreshReservationAsync(showNotificationOnError: false);
         }
@@ -2297,8 +2303,8 @@ public partial class MainWindowViewModel(
                 0,
                 GrabReservationStrategies.Length - 1),
             CookieExpiryAlerts = BuildAlertSettingsSnapshot(),
-            LastLibraryId = SelectedLibrary?.LibraryId,
-            LastLibraryName = SelectedLibrary?.Name,
+            LastLibraryId = _lockedLibrarySummary?.LibraryId,
+            LastLibraryName = _lockedLibrarySummary?.Name,
             SuccessfulReservationCount = _historicalSuccessCount,
             TotalGuardSeconds = GetCurrentTotalGuardSeconds(DateTimeOffset.Now),
             DailyCheckoutEnabled = DailyCheckoutEnabled,

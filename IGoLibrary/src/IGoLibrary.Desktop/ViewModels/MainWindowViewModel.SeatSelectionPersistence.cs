@@ -36,7 +36,8 @@ public partial class MainWindowViewModel
         var saved = settings.LastGrabSeatSelection;
         await LoadLibrariesAsync(restorePreferredSelection, saved?.LibraryId);
         if (SelectedLibrary is null || IsGrabTaskActive) return;
-        await BindSelectedLibraryCoreAsync();
+        // Restoring must not save the temporarily empty layout over the remembered seats.
+        await BindSelectedLibraryCoreAsync(rememberSelection: false);
         if (saved is null || _seatLibraryId != saved.LibraryId || SelectedLibrary?.LibraryId != saved.LibraryId) return;
 
         var availableKeys = _allSeats.Select(seat => seat.SeatKey).ToHashSet(StringComparer.Ordinal);
