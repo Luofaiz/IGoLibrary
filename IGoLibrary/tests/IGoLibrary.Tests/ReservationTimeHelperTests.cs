@@ -58,4 +58,24 @@ public sealed class ReservationTimeHelperTests
         Assert.Equal(TimeSpan.FromMinutes(29), remaining);
     }
 
+    [Fact]
+    public void GetEffectiveReReserveLeadTime_ReservesMinimumExecutionBudget()
+    {
+        var effective = ReservationTimeHelper.GetEffectiveReReserveLeadTime(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(TimeSpan.FromSeconds(5), effective);
+    }
+
+    [Fact]
+    public void GetReReserveTriggerRemaining_UsesExecutionBudgetWhenLeadTimeIsTooSmall()
+    {
+        var now = DateTimeOffset.Now;
+        var expiration = now.AddSeconds(3);
+
+        var remaining = ReservationTimeHelper.GetReReserveTriggerRemaining(expiration, now, TimeSpan.FromSeconds(1));
+
+        Assert.Equal(TimeSpan.Zero, remaining);
+        Assert.True(ReservationTimeHelper.ShouldReReserve(expiration, now, TimeSpan.FromSeconds(1)));
+    }
+
 }

@@ -127,8 +127,11 @@ public sealed class OccupySeatCoordinator(
                         info.ExpirationTime,
                         DateTimeOffset.Now,
                         plan.ReReserveLeadTime);
-                    activityLogService.Write(LogEntryKind.Info, "Occupy", $"距离重约触发还有 {triggerRemaining.TotalSeconds:0} 秒，{delay.TotalSeconds:0} 秒后继续检测。");
-                    await Task.Delay(delay, cancellationToken);
+                    var effectiveDelay = triggerRemaining > TimeSpan.Zero
+                        ? TimeSpan.FromTicks(Math.Min(delay.Ticks, triggerRemaining.Ticks))
+                        : TimeSpan.Zero;
+                    activityLogService.Write(LogEntryKind.Info, "Occupy", $"距离重约触发还有 {triggerRemaining.TotalSeconds:0} 秒，{effectiveDelay.TotalSeconds:0} 秒后继续检测。");
+                    await Task.Delay(effectiveDelay, cancellationToken);
                     continue;
                 }
 
