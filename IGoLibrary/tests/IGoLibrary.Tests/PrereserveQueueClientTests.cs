@@ -60,4 +60,13 @@ public sealed class PrereserveQueueClientTests
         Assert.True(message.IndicatesSuccess);
         Assert.False(message.RequestsSessionRefresh);
     }
+
+    [Fact]
+    public void ParseMessage_RecognizesOutsideReservationWindow()
+    {
+        var message = PrereserveQueueClient.ParseMessage("{\"code\":0,\"msg\":\"不在预约时间内,请在 20:10-23:59 来预约\"}");
+
+        Assert.True(message.IndicatesOutsideReservationWindow);
+        Assert.False(message.IndicatesCookieInvalid);
+    }
 }

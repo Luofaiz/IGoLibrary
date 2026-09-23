@@ -13,11 +13,20 @@ public sealed class PrereserveQueueClient : IPrereserveQueueClient
     internal const string TomorrowReservationUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Safari/537.36 NetType/WIFI MicroMessenger/7.0.20.1781(0x6700143B) WindowsWechat(0x63090719) XWEB/8391 Flue";
     internal const string TomorrowReservationAppVersion = "2.2.5";
     internal static readonly TimeSpan KeepAliveInterval = TimeSpan.FromMilliseconds(250);
+    internal static readonly TimeSpan PreheatKeepAliveInterval = TimeSpan.FromSeconds(1);
+    internal static readonly TimeSpan HighFrequencyKeepAliveWindow = TimeSpan.FromSeconds(5);
     private const string ClientPayload = """{"ns":"prereserve/queue","msg":""}""";
 
     public async Task RunAsync(
         string cookie,
         Func<PrereserveQueueMessage, CancellationToken, Task> onMessageAsync,
+        CancellationToken cancellationToken = default)
+        => await RunAsync(cookie, onMessageAsync, null, cancellationToken);
+
+    public async Task RunAsync(
+        string cookie,
+        Func<PrereserveQueueMessage, CancellationToken, Task> onMessageAsync,
+        DateTimeOffset? scheduledStart,
         CancellationToken cancellationToken = default)
     {
         using var socket = new ClientWebSocket();
@@ -29,7 +38,7 @@ public sealed class PrereserveQueueClient : IPrereserveQueueClient
         await socket.ConnectAsync(new Uri(QueueUri), cancellationToken);
 
         using var keepAliveCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var keepAliveTask = SendKeepAliveAsync(socket, keepAliveCts.Token);
+        var keepAliveTask = SendKeepAliveAsync(socket, scheduledStart, keepAliveCts.Token);
 
         try
         {
@@ -92,7 +101,7 @@ public sealed class PrereserveQueueClient : IPrereserveQueueClient
         }
     }
 
-    private static async Task SendKeepAliveAsync(ClientWebSocket socket, CancellationToken cancellationToken)
+    private static async Task SendKeepAliveAsync(ClientWebSocket socket, DateTimeOffset? scheduledStart, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -103,7 +112,10 @@ public sealed class PrereserveQueueClient : IPrereserveQueueClient
 
             var payload = Encoding.UTF8.GetBytes(ClientPayload);
             await socket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken);
-            await Task.Delay(KeepAliveInterval, cancellationToken);
+            var interval = scheduledStart is { } start && start - DateTimeOffset.Now > HighFrequencyKeepAliveWindow
+                ? PreheatKeepAliveInterval
+                : KeepAliveInterval;
+            await Task.Delay(interval, cancellationToken);
         }
     }
 

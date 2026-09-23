@@ -23,6 +23,10 @@ public sealed record PrereserveQueueMessage(
 
     public bool IndicatesCookieInvalid => Message == "1000" || Code == 1000;
 
+    public bool IndicatesOutsideReservationWindow =>
+        Message.Contains("不在预约时间内", StringComparison.Ordinal) ||
+        Message.Contains("请在", StringComparison.Ordinal) && Message.Contains("来预约", StringComparison.Ordinal);
+
     public bool RequestsSessionRefresh =>
         Code == 0 && Data == 1 ||
         string.Equals(Message, UserInfoFailedMessage, StringComparison.Ordinal);

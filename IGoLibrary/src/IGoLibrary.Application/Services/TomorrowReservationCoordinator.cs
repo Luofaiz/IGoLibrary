@@ -25,6 +25,8 @@ public sealed class TomorrowReservationCoordinator(
     private static readonly TimeSpan SubmittedConfirmationMaximumWait = TimeSpan.FromMilliseconds(1000);
     private static readonly TimeSpan VenueWarmupTimeout = TimeSpan.FromMilliseconds(800);
     private static readonly TimeSpan QueueReconnectDelay = TimeSpan.FromMilliseconds(300);
+    private static readonly TimeSpan QueueAuthRecoveryDelay = TimeSpan.FromMilliseconds(500);
+    private const int MaxQueueAuthRecoveryAttempts = 2;
     private static readonly TimeSpan SessionValidationRetryDelay = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan SubmissionWindowPollInterval = TimeSpan.FromMilliseconds(50);
 
@@ -130,7 +132,7 @@ public sealed class TomorrowReservationCoordinator(
 
             var cookie = GetCurrentCookieOrThrow();
             var reservationSucceeded = new TaskCompletionSource<TrackedSeat>(TaskCreationOptions.RunContinuationsAsynchronously);
-            queueSession = await StartQueueSessionAsync(cookie, reservationSucceeded, scheduledStart, cancellationToken);
+            queueSession = await StartQueueSessionWithRecoveryAsync(cookie, reservationSucceeded, scheduledStart, cancellationToken);
             if (reservationSucceeded.Task.IsCompletedSuccessfully)
             {
                 await CompleteSuccessfullyAsync(plan, reservationSucceeded.Task.Result, cancellationToken);
@@ -153,7 +155,11 @@ public sealed class TomorrowReservationCoordinator(
                     {
                         await queueSession.Task;
                     }
-                    catch (Exception ex) when (!IsSessionFailure(ex) && !cancellationToken.IsCancellationRequested)
+                    catch (Exception ex) when (IsSessionFailure(ex) && !cancellationToken.IsCancellationRequested)
+                    {
+                        activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约排队会话认证失败，准备验证后恢复：{ex.Message}");
+                    }
+                    catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
                     {
                         activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约排队连接中断：{ex.Message}");
                     }
@@ -609,7 +615,8 @@ public sealed class TomorrowReservationCoordinator(
         TaskCompletionSource queueReady,
         TaskCompletionSource<TrackedSeat> reservationSucceeded)
     {
-        if (!string.IsNullOrWhiteSpace(message.Message) &&
+            if (!message.IndicatesOutsideReservationWindow &&
+                !string.IsNullOrWhiteSpace(message.Message) &&
             (!message.IndicatesQueueReady || !queueReady.Task.IsCompleted))
         {
             var messageKind = message.IndicatesQueueReady
@@ -644,7 +651,7 @@ public sealed class TomorrowReservationCoordinator(
         var queueReadyCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var queueReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var queueTask = RunQueueSessionAsync(cookie, queueReady, reservationSucceeded, ended, queueReadyCts.Token);
+         var queueTask = RunQueueSessionAsync(cookie, queueReady, reservationSucceeded, ended, scheduledStart, queueReadyCts.Token);
         var session = new QueueSession(queueReadyCts, queueTask, ended.Task);
 
         SetRunning(scheduledStart is null ? "明日预约排队中。" : "明日预约排队预热中。");
@@ -666,11 +673,43 @@ public sealed class TomorrowReservationCoordinator(
         }
     }
 
+    private async Task<QueueSession> StartQueueSessionWithRecoveryAsync(
+        string cookie,
+        TaskCompletionSource<TrackedSeat> reservationSucceeded,
+        DateTimeOffset? scheduledStart,
+        CancellationToken cancellationToken)
+    {
+        Exception? lastFailure = null;
+        for (var attempt = 1; attempt <= MaxQueueAuthRecoveryAttempts; attempt++)
+        {
+            try
+            {
+                return await StartQueueSessionAsync(cookie, reservationSucceeded, scheduledStart, cancellationToken);
+            }
+            catch (Exception ex) when (IsSessionFailure(ex) && !cancellationToken.IsCancellationRequested)
+            {
+                lastFailure = ex;
+                if (attempt >= MaxQueueAuthRecoveryAttempts)
+                {
+                    break;
+                }
+
+                activityLogService.Write(LogEntryKind.Warning, "Grab", $"明日预约排队会话验证失败，第 {attempt} 次恢复前等待 {QueueAuthRecoveryDelay.TotalMilliseconds:0}ms。");
+                await Task.Delay(QueueAuthRecoveryDelay, cancellationToken);
+                await apiClient.ValidateCookieAsync(GetCurrentCookieOrThrow(), cancellationToken);
+                cookie = GetCurrentCookieOrThrow();
+            }
+        }
+
+        throw lastFailure ?? new InvalidOperationException("明日预约排队会话恢复失败。");
+    }
+
     private async Task RunQueueSessionAsync(
         string cookie,
         TaskCompletionSource queueReady,
         TaskCompletionSource<TrackedSeat> reservationSucceeded,
         TaskCompletionSource ended,
+        DateTimeOffset? scheduledStart,
         CancellationToken cancellationToken)
     {
         using var sessionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -689,7 +728,7 @@ public sealed class TomorrowReservationCoordinator(
                 validation = ValidateQueueSessionAsync(validationFailed, token);
             }
             return Task.CompletedTask;
-        }, sessionCts.Token);
+        }, scheduledStart, sessionCts.Token);
         var transport = RunTransportAsync();
 
         try
@@ -744,6 +783,7 @@ public sealed class TomorrowReservationCoordinator(
     }
 
     private bool IsSessionFailure(Exception exception) =>
+        exception is TraceIntApiException { IsAuthorizationDenied: true } ||
         CookieExpiryDetector.IsKnownExpiredCookieException(exception, runtimeState.Session?.Cookie);
 
     private bool IsTransientQueueFailure(Exception exception) =>
@@ -768,7 +808,7 @@ public sealed class TomorrowReservationCoordinator(
             await StopQueueSessionAsync(currentSession);
         }
 
-        return await StartQueueSessionAsync(cookie, reservationSucceeded, scheduledStart: null, cancellationToken);
+        return await StartQueueSessionWithRecoveryAsync(cookie, reservationSucceeded, scheduledStart: null, cancellationToken);
     }
 
     private async Task StopQueueSessionAsync(QueueSession session)

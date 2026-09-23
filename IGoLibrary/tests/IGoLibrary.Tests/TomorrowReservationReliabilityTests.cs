@@ -423,7 +423,7 @@ public sealed partial class TomorrowReservationCoordinatorTests
     }
 
     [Fact]
-    public async Task QueueAuthenticationFailureAfterReady_IsNotRetriedAsDisconnect()
+    public async Task QueueAuthenticationFailureAfterReady_ValidatesAndRetriesOnce()
     {
         var saveStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var runs = 0;
@@ -453,7 +453,7 @@ public sealed partial class TomorrowReservationCoordinatorTests
             await coordinator.StartAsync(CreatePlan([new("first", "A"), new("second", "B")]));
             await WaitForAsync(() => coordinator.GetStatus().State == CoordinatorTaskState.Failed);
             Assert.Equal(1, saves);
-            Assert.Equal(1, runs);
+            Assert.Equal(2, runs);
         }
         finally { await coordinator.StopAsync(); }
     }
