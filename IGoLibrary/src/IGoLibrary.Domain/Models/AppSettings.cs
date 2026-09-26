@@ -20,7 +20,9 @@ public sealed record AppSettings(
     bool DailyCheckoutEnabled = false,
     string DailyCheckoutTime = "21:30",
     bool AutoCreditSignInEnabled = true,
-    GrabSeatSelection? LastGrabSeatSelection = null)
+    GrabSeatSelection? LastGrabSeatSelection = null,
+    int OccupyReReserveLeadMinutes = 1,
+    int OccupyReReserveDelaySeconds = 0)
 {
     public static AppSettings Default { get; } = new(
         NotificationsEnabled: true,
@@ -39,5 +41,7 @@ public sealed record AppSettings(
         CachedUserNickname: null,
         DailyCheckoutEnabled: false,
         DailyCheckoutTime: "21:30",
-        AutoCreditSignInEnabled: true);
+        AutoCreditSignInEnabled: true,
+        OccupyReReserveLeadMinutes: 1,
+        OccupyReReserveDelaySeconds: 0);
 }

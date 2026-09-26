@@ -10,5 +10,7 @@ public interface IOccupySeatCoordinator
 
     Task StopAsync(CancellationToken cancellationToken = default);
 
+    Task ReReserveNowAsync(CancellationToken cancellationToken = default);
+
     CoordinatorStatus GetStatus();
 }

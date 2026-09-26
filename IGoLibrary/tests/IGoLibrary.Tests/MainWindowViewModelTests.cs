@@ -899,7 +899,8 @@ public sealed partial class MainWindowViewModelTests
     public async Task StartOccupyAsync_StartsCoordinatorWithLeadTime()
     {
         var occupyCoordinator = new FakeOccupySeatCoordinator();
-        var viewModel = CreateViewModel(occupySeatCoordinator: occupyCoordinator);
+        var settings = new FakeSettingsService(AppSettings.Default);
+        var viewModel = CreateViewModel(occupySeatCoordinator: occupyCoordinator, settingsService: settings);
 
         viewModel.ReReserveLeadMinutes = 2;
         viewModel.ReReserveDelaySeconds = 30;
@@ -909,6 +910,34 @@ public sealed partial class MainWindowViewModelTests
         Assert.Equal(1, occupyCoordinator.StartCalls);
         var plan = Assert.IsType<OccupySeatPlan>(occupyCoordinator.StartedPlan);
         Assert.Equal(TimeSpan.FromSeconds(150), plan.ReReserveLeadTime);
+        Assert.Equal(2, settings.CurrentSettings.OccupyReReserveLeadMinutes);
+        Assert.Equal(30, settings.CurrentSettings.OccupyReReserveDelaySeconds);
+    }
+
+    [Fact]
+    public async Task QuickOccupyAsync_ExecutesCoordinatorAndRefreshesReservation()
+    {
+        var occupyCoordinator = new FakeOccupySeatCoordinator();
+        var sessionService = new FakeSessionService
+        {
+            CurrentSession = new SessionCredentials("cookie", SessionSource.ManualCookie, DateTimeOffset.Now, true)
+        };
+        var apiClient = new FakeTraceIntApiClient
+        {
+            OnGetReservationRecordsAsync = (_, _) => Task.FromResult<IReadOnlyList<ReservationRecord>>(
+            [new(ReservationRecordKind.Today, "token", 1, "馆", "seat", "A1", DateTimeOffset.Now.AddMinutes(30), DateOnly.FromDateTime(DateTime.Today))])
+        };
+        var viewModel = CreateViewModel(
+            occupySeatCoordinator: occupyCoordinator,
+            sessionService: sessionService,
+            apiClient: apiClient);
+        viewModel.IsAuthorized = true;
+        await viewModel.RefreshReservationCommand.ExecuteAsync(null);
+
+        Assert.True(viewModel.CanQuickOccupy);
+        await viewModel.QuickOccupyCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, occupyCoordinator.ReReserveNowCalls);
     }
 
     [Fact]

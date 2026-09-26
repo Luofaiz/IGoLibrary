@@ -502,6 +502,10 @@ public partial class MainWindowViewModel(
     [ObservableProperty]
     private int selectedRefreshModeIndex;
 
+    public bool CanStartOccupy => !IsOccupyRunning && !IsCancellingCurrentReservation;
+
+    public bool CanQuickOccupy => CanStartOccupy && IsAuthorized && _currentReservation is { IsCheckedIn: false };
+
     [ObservableProperty]
     private int selectedNotificationSettingsTabIndex;
 
@@ -742,6 +746,10 @@ public partial class MainWindowViewModel(
     partial void OnIsOccupyRunningChanged(bool value)
     {
         OnPropertyChanged(nameof(IsOccupyStopped));
+        OnPropertyChanged(nameof(CanStartOccupy));
+        OnPropertyChanged(nameof(CanQuickOccupy));
+        StartOccupyCommand.NotifyCanExecuteChanged();
+        QuickOccupyCommand.NotifyCanExecuteChanged();
         UpdateReservationCountdown();
     }
 
@@ -750,6 +758,10 @@ public partial class MainWindowViewModel(
         OnPropertyChanged(nameof(CanCancelCurrentReservation));
         OnPropertyChanged(nameof(CanCancelReservationRecord));
         CancelReservationRecordCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanStartOccupy));
+        OnPropertyChanged(nameof(CanQuickOccupy));
+        StartOccupyCommand.NotifyCanExecuteChanged();
+        QuickOccupyCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnIsRefreshingReservationRecordsChanged(bool value)
@@ -824,6 +836,8 @@ public partial class MainWindowViewModel(
 
         OnPropertyChanged(nameof(AuthorizationStatusText));
         OnPropertyChanged(nameof(IsUnauthorized));
+        OnPropertyChanged(nameof(CanQuickOccupy));
+        QuickOccupyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(ShowVenuePreviewStateTag));
         OnPropertyChanged(nameof(ShowVenueOpenStatusTag));
         OnPropertyChanged(nameof(ShowVenueClosedStatusTag));
@@ -2240,7 +2254,7 @@ public partial class MainWindowViewModel(
             : $"{kind} {reservation.LibraryName} {seatName}";
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanStartOccupy))]
     private async Task StartOccupyAsync()
     {
         if (_isSigningOut) return;
@@ -2248,13 +2262,15 @@ public partial class MainWindowViewModel(
         await _accountOperationGate.WaitAsync();
         try
         {
-            if (_isSigningOut || generation != _accountGeneration) return;
+            if (_isSigningOut || generation != _accountGeneration || !CanStartOccupy) return;
             try
             {
+                await PersistOccupyReReserveSettingsAsync();
                 var plan = new OccupySeatPlan(
                     BuildOccupyReReserveLeadTime(),
                     (RefreshMode)SelectedRefreshModeIndex);
                 await RecordAndStartAsync("OccupySeat", "Desktop", () => occupySeatCoordinator.StartAsync(plan));
+                ApplyOccupyStatus(occupySeatCoordinator.GetStatus());
             }
             catch (Exception ex)
             {
@@ -2262,6 +2278,41 @@ public partial class MainWindowViewModel(
                 await notificationService.ShowWarningAsync("启动占座失败", ex.Message);
             }
 
+        }
+        finally
+        {
+            _accountOperationGate.Release();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanQuickOccupy))]
+    private async Task QuickOccupyAsync()
+    {
+        if (_isSigningOut) return;
+        await _accountOperationGate.WaitAsync();
+        try
+        {
+            if (_isSigningOut || !CanQuickOccupy) return;
+            try
+            {
+                await PersistOccupyReReserveSettingsAsync();
+                await RecordAndStartAsync("OccupySeat", "Desktop", () => occupySeatCoordinator.ReReserveNowAsync());
+                await RefreshReservationAsync(showNotificationOnError: false);
+                await notificationService.ShowSuccessAsync("一键占座成功", "已立即重新预约当前座位或备用座位。");
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                activityLogService.Write(LogEntryKind.Error, "Occupy", $"一键占座失败：{ex.Message}");
+                await notificationService.ShowWarningAsync("一键占座失败", ex.Message);
+            }
+            finally
+            {
+                ApplyOccupyStatus(occupySeatCoordinator.GetStatus());
+                await RefreshReservationAsync(showNotificationOnError: false);
+            }
         }
         finally
         {
@@ -2469,6 +2520,8 @@ public partial class MainWindowViewModel(
             RetryCount = settings.RetryCount;
             DailyCheckoutEnabled = settings.DailyCheckoutEnabled;
             AutoCreditSignInEnabled = settings.AutoCreditSignInEnabled;
+            ReReserveLeadMinutes = Math.Clamp(settings.OccupyReReserveLeadMinutes, 0, 180);
+            ReReserveDelaySeconds = Math.Clamp(settings.OccupyReReserveDelaySeconds, 0, 59);
             DailyCheckoutTime = string.IsNullOrWhiteSpace(settings.DailyCheckoutTime) ? "21:30" : settings.DailyCheckoutTime;
             if (DailyCheckoutEnabled)
             {
@@ -3172,6 +3225,23 @@ public partial class MainWindowViewModel(
         var seconds = Math.Clamp(ReReserveDelaySeconds, 0, 59);
         var leadTime = TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(seconds);
         return leadTime <= TimeSpan.Zero ? TimeSpan.FromSeconds(1) : leadTime;
+    }
+
+    private async Task PersistOccupyReReserveSettingsAsync()
+    {
+        var settings = await settingsService.LoadAsync();
+        var minutes = Math.Clamp(ReReserveLeadMinutes, 0, 180);
+        var seconds = Math.Clamp(ReReserveDelaySeconds, 0, 59);
+        if (settings.OccupyReReserveLeadMinutes == minutes && settings.OccupyReReserveDelaySeconds == seconds)
+        {
+            return;
+        }
+
+        await settingsService.SaveAsync(settings with
+        {
+            OccupyReReserveLeadMinutes = minutes,
+            OccupyReReserveDelaySeconds = seconds
+        });
     }
 
     private void OnLogEntryWritten(object? sender, AppLogEntry entry)
@@ -4035,6 +4105,8 @@ public partial class MainWindowViewModel(
         OnPropertyChanged(nameof(HasNoReservationRecords));
         OnPropertyChanged(nameof(HasNoCurrentReservation));
         OnPropertyChanged(nameof(CanCancelCurrentReservation));
+        OnPropertyChanged(nameof(CanQuickOccupy));
+        QuickOccupyCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(HomeReservationRecords));
 
         if (_currentReservation is null)

@@ -29,6 +29,14 @@
   </Window.Resources>
 
   <Window.Styles>
+    <Style Selector="Button.occupy-start">
+      <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource AppAccentForegroundBrush}" />
+    </Style>
+    <Style Selector="Button.occupy-start:disabled">
+      <Setter Property="Background" Value="{DynamicResource SemiCardBorderBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource SemiTextSecondaryBrush}" />
+    </Style>
     <Style Selector="TextBlock.page-title">
       <Setter Property="FontSize" Value="32" />
       <Setter Property="FontWeight" Value="Bold" />
@@ -1298,12 +1306,17 @@
                         HorizontalContentAlignment="Center" />
                 <Button Content="开始占座"
                         Command="{Binding StartOccupyCommand}"
-                        Background="{DynamicResource AppAccentBrush}"
-                        Foreground="{DynamicResource AppAccentForegroundBrush}"
+                        Classes="occupy-start"
+                        IsEnabled="{Binding CanStartOccupy}"
                         FontWeight="Bold"
                         Margin="0,0,12,8"
                         HorizontalAlignment="Stretch"
                         HorizontalContentAlignment="Center" />
+                <Button Content="一键占座"
+                        Command="{Binding QuickOccupyCommand}"
+                        Classes="Secondary"
+                        ToolTip.Tip="立即取消当前未签到预约并重约一次；自动占座运行时请先停止。"
+                        Margin="0,0,0,8" />
               </WrapPanel>
 
               <Grid Grid.Row="1" Grid.Column="0" ColumnDefinitions="*,*" ColumnSpacing="28" VerticalAlignment="Bottom">

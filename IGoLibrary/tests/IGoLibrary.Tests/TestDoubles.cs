@@ -739,6 +739,8 @@ internal sealed class FakeOccupySeatCoordinator : IOccupySeatCoordinator
 
     public int StopCalls { get; private set; }
 
+    public int ReReserveNowCalls { get; private set; }
+
     public Task StartAsync(OccupySeatPlan plan, CancellationToken cancellationToken = default)
     {
         StartCalls++;
@@ -767,6 +769,12 @@ internal sealed class FakeOccupySeatCoordinator : IOccupySeatCoordinator
             DateTimeOffset.Now);
         StatusChanged?.Invoke(this, _status);
 
+    }
+
+    public Task ReReserveNowAsync(CancellationToken cancellationToken = default)
+    {
+        ReReserveNowCalls++;
+        return Task.CompletedTask;
     }
 
     public CoordinatorStatus GetStatus() => _status;

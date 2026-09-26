@@ -91,6 +91,66 @@ public sealed class OccupySeatCoordinator(
         }
     }
 
+    public Task ReReserveNowAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            if (_runningTask is { IsCompleted: false })
+            {
+                throw new InvalidOperationException("占座任务已在运行，请先停止后再执行一键占座。");
+            }
+            _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _status = new CoordinatorStatus(CoordinatorTaskState.Starting, "占座", "正在执行一键占座。", DateTimeOffset.Now, DateTimeOffset.Now);
+            NotifyStatusChanged();
+            _runningTask = RunOnceAsync(_cts.Token);
+            return _runningTask;
+        }
+    }
+
+    private async Task RunOnceAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await ReReserveOnceCoreAsync(cancellationToken);
+            Complete("一键占座已完成。");
+        }
+        catch (OperationCanceledException)
+        {
+            Complete("一键占座已停止。");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Fail($"一键占座失败：{ex.Message}");
+            throw;
+        }
+    }
+
+    private async Task ReReserveOnceCoreAsync(CancellationToken cancellationToken)
+    {
+        var cookie = GetCurrentCookieOrThrow();
+        var info = await apiClient.GetReservationInfoAsync(cookie, cancellationToken)
+            ?? throw new InvalidOperationException("当前没有可续占的预约。");
+        if (info.IsCheckedIn)
+        {
+            throw new InvalidOperationException("当前座位已签到，不能执行重约。");
+        }
+
+        activityLogService.Write(LogEntryKind.Warning, "Occupy", "正在执行一键占座：取消当前预约并立即重新预约。");
+        if (!await apiClient.CancelReservationAsync(cookie, info.ReservationToken, cancellationToken))
+        {
+            throw new InvalidOperationException("取消当前预约失败，未执行重新预约。");
+        }
+
+        var reservedSeat = await TryReserveAgainAsync(GetCurrentCookieOrThrow(), info, new Random(), cancellationToken);
+        if (reservedSeat is null)
+        {
+            throw new InvalidOperationException("一键占座失败，未能重新预约座位。");
+        }
+
+        activityLogService.Write(LogEntryKind.Success, "Occupy", $"{reservedSeat.SeatName} 已重新预约成功。");
+    }
+
     private async Task RunAsync(OccupySeatPlan plan, CancellationToken cancellationToken)
     {
         try
